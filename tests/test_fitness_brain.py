@@ -50,4 +50,4 @@ def test_brain_export_writes_linked_notes_and_respects_personal_ones(tmp_path):
 
 
 def test_hashes_in_texts_do_not_become_brain_tags():
-    assert brain_export.plain("radar #123 and #agents, C# stays") == "radar 123 and agents, C# stays"
+    assert brain_export.plain("radar #123 and #agents, C# stays, (#121) too") == "radar 123 and agents, C# stays, (121) too"

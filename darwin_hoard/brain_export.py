@@ -32,7 +32,7 @@ def safe_name(text: str, limit: int = 90) -> str:
 
 def plain(text: Any) -> str:
     """Text for a note body: a "#123" or "#tag" from a radar line would become a Brain tag, so the hash goes."""
-    return re.sub(r"(?<!\S)#(?=\w)", "", str(text or ""))
+    return re.sub(r"(?<!\w)#(?=\w)", "", str(text or ""))
 
 
 def _front(kind: str, extra: dict[str, Any]) -> str:
