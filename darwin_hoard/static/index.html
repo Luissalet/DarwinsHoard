@@ -29,6 +29,11 @@
   <main id="views">
     <!-- Resumen -->
     <section class="view" id="view-overview">
+      <form class="card ask" id="ask-form" autocomplete="off">
+        <h3>Pregunta a Darwin</h3>
+        <div class="inline-form"><input id="ask-q" maxlength="500" placeholder="¿Qué tenemos para transcribir reuniones? ¿Qué repos de agentes de código vimos?" aria-label="Pregunta"><button class="btn" id="ask-go" type="submit">Preguntar</button></div>
+        <div id="ask-out" aria-live="polite"></div>
+      </form>
       <div class="kpis" id="kpis"></div>
       <div class="grid2">
         <div class="card"><h3>Descubrimientos por estado</h3><div id="ov-states" class="bars"></div></div>
@@ -61,6 +66,8 @@
           <option value="captures">Más apariciones</option><option value="title">Nombre</option><option value="oldest">Más antiguos</option>
         </select>
         <label class="check"><input type="checkbox" id="f-pinned"> Solo los que marqué 📌</label>
+        <button class="btn small" id="f-triage" type="button" title="El modelo local propone una app para cada descubrimiento sin propuesta">Proponer apps (IA)</button>
+        <span class="meta" id="f-triage-status" role="status" aria-live="polite"></span>
         <span class="spacer"></span>
         <span class="meta" id="f-count"></span>
       </div>

@@ -115,3 +115,15 @@ ul.tree ul { padding-left: 18px; border-left: 1px dashed var(--hoard-border); ma
 .inbox-card details.ocr pre { white-space: pre-wrap; max-block-size: 220px; overflow: auto; margin: 6px 0 0; padding: 8px;
   background: var(--hoard-sunken); border-radius: var(--hoard-radius-sm, 6px); font: 12px/1.4 var(--hoard-font-mono, monospace); }
 #in-ocr-status { margin-inline-start: 8px; }
+
+/* Ask box */
+.ask { margin-bottom: 12px; }
+.ask .inline-form input { flex: 1; }
+.ask-answer { margin: 10px 0 6px; line-height: 1.5; }
+.ask-row { margin: 6px 0; }
+.ask-row ul { margin: 6px 0 0; padding-left: 18px; }
+
+/* Debate of a proposal (Ágora thread) */
+.debate { margin-top: 6px; }
+.thread { border-left: 2px solid var(--hoard-accent-line); padding-left: 8px; margin-top: 6px; }
+.thread .msg { margin: 6px 0; font-size: 13px; }

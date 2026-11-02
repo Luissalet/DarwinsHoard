@@ -20,7 +20,8 @@ log = logging.getLogger("darwin")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
     "whatsapp_account": "luis",
-    "whatsapp_chat": "",            # exact JID of the «Gittrend» chat; empty = not synced
+    "whatsapp_chat": "",                 # exact JID of the «Gittrend» chat; empty = not synced
+    "whatsapp_chat_name": "",            # its display name, for the page
     "whatsapp_sync_minutes": 0,      # 0 = only on demand
     "inspiration_dir": r"D:\LocalAI\inspiration",
     "radar_ideas": r"E:\Development\IA\Research\claude\radar-ideas.md",
@@ -50,6 +51,7 @@ class Services:
         self.settings = {**DEFAULT_SETTINGS, **(read_json(self.settings_path, default={}) or {})}
         self.importer = LegacyImporter(self.store)
         self.ocr_job: dict[str, Any] = {"running": False}
+        self.triage_job: dict[str, Any] = {"running": False}
         self.started = time.time()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -95,7 +97,7 @@ class Services:
     def import_legacy(self, *, inspiration_dir: str = "", radar_ideas: str = "", agora: bool = True) -> dict[str, Any]:
         return self.importer.import_all(inspiration_dir=Path(inspiration_dir or self.settings["inspiration_dir"]),
                                         radar_ideas=Path(radar_ideas or self.settings["radar_ideas"]),
-                                        hub_url=self.config.hub_url, agora=agora)
+                                        hub_url=self.config.hub_url, agora=agora, hoards_root=Path(self.config.hoards_root))
 
     # ------------------------------------------------------------------ ingestion (darwin_ingest, by Codex)
 
@@ -186,6 +188,52 @@ class Services:
                     "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
         finally:
             lock.release()
+
+    def _hub_io(self):
+        from .hoard_link import family
+        from .hoard_link._hubclient import fetch_detailed
+        return family._hub(), family._headers(), fetch_detailed
+
+    def discuss(self, proposal_id: int, note: str = "") -> dict[str, Any]:
+        from . import debate
+        hub, headers, fetch = self._hub_io()
+        return debate.discuss(self.store, proposal_id, hub, headers, fetch, note=note)
+
+    def proposal_thread(self, proposal_id: int) -> dict[str, Any]:
+        from . import debate
+        hub, headers, fetch = self._hub_io()
+        return debate.thread(self.store, proposal_id, hub, headers, fetch)
+
+    def ask(self, question: str) -> dict[str, Any]:
+        from . import ask as asker
+        from .hoard_link import family
+        return asker.ask(self.store, question, chat=family.chat)
+
+    def triage(self, *, channel: str = "", limit: int = 50) -> dict[str, Any]:
+        """Suggest an app for discoveries without proposals (see :mod:`triage`); one run at a time."""
+        from . import triage as triager
+        from .hoard_link import family
+        lock = self._sync_locks.setdefault("triage", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"busy": True, **self.triage_job}
+        try:
+            self.triage_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+            result = triager.run(self.store, family.chat, channel=channel, limit=limit,
+                                 on_progress=lambda d, t: self.triage_job.update(done=d, total=t))
+            self.triage_job = {"running": False, "finished": time.time(), **result}
+            return result
+        except Exception as exc:  # noqa: BLE001 - surfaced to the page
+            self.triage_job = {"running": False, "finished": time.time(), "error": str(exc)}
+            raise
+        finally:
+            lock.release()
+
+    def start_triage(self, *, channel: str = "", limit: int = 50) -> dict[str, Any]:
+        if self.triage_job.get("running"):
+            return dict(self.triage_job)
+        self.triage_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+        threading.Thread(target=lambda: self._safe(self.triage, channel=channel, limit=limit), name="darwin-triage", daemon=True).start()
+        return dict(self.triage_job)
 
     # ------------------------------------------------------------------ screenshots (OCR)
 

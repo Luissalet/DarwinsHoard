@@ -74,6 +74,21 @@ def inbox(request: Request, channel: str = "", limit: int = 100, offset: int = 0
     return query.inbox(services(request).store, channel=channel, limit=max(1, min(limit, 500)), offset=max(0, offset))
 
 
+@router.get("/api/proposals/{proposal_id}/thread")
+def proposal_thread(request: Request, proposal_id: int):
+    return services(request).proposal_thread(proposal_id)
+
+
+@router.get("/api/triage")
+def triage_status(request: Request):
+    return services(request).triage_job
+
+
+@router.post("/api/triage")
+def triage_start(request: Request, channel: str = "", limit: int = 50):
+    return services(request).start_triage(channel=channel[:30], limit=max(1, min(limit, 200)))
+
+
 @router.get("/api/inbox/ocr")
 def inbox_ocr_status(request: Request):
     return services(request).ocr_job
