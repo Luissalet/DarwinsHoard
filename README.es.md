@@ -6,6 +6,8 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
 
 ## Pestañas
 
+**Pregunta a Darwin** (en Resumen): una pregunta en lenguaje natural que responde el modelo local de la familia a partir del árbol, los hallazgos y las carencias, citando cada hallazgo por su número.
+
 - **Resumen**: muestra
   - recuentos y hallazgos por estado;
   - las apps con más propuestas y de dónde vienen los hallazgos;
@@ -15,13 +17,13 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
 - **Historial**: todos los hallazgos.
   - Se filtran por texto, `owner/repo`, URL o número de radar, estado, app, origen y marcados con 📌, y se pueden ordenar.
   - Cada hallazgo abre su genealogía: apariciones con fichero y línea, propuestas por app con su historial, y entregas con commits, indicando si el commit está en main.
-  - Desde ahí se cambian estados y se crean propuestas.
+  - Desde ahí se cambian estados y se crean propuestas. «Debatir en el Ágora» abre un hilo por propuesta con su genealogía y muestra los mensajes en la ficha. «Proponer apps (IA)» hace que el modelo local proponga app para los hallazgos sin propuesta: quedan pendientes y nunca pisan tus decisiones.
 - **Bandeja**: capturas sin fuente todavía, con la imagen y el texto que leyó el OCR. Nunca se pierden; un clic las convierte en hallazgo. «Leer capturas (OCR)» lee los pantallazos con el OCR de la familia (el de Kafka) y enlaza las URL y los `owner/repo` que GitHub confirma; también se lanza solo tras sincronizar el chat.
 - **Árbol**: Faustus (raíz) > Hoard Hub > Hoards > módulos absorbidos > capacidades > herramientas reales.
   - Cada nodo indica su evidencia (*declarada*, *viva*) y su estado (*disponible*, *detenida*).
   - El buscador «¿Quién hace…?» dice qué apps cubren ya algo y su ruta en el árbol.
 - **Novedades**: lo nuevo desde la última visita, o del último día, semana o mes.
-- **Carencias**: lo que se quiere y ninguna app hace todavía.
+- **Carencias**: lo que se quiere y ninguna app hace todavía. Se alimenta de los OBJETIVOS.md de cada Hoard que sean una lista; cuando un objetivo sale del fichero, su carencia se cierra.
 
 El botón **Añadir** acepta una URL, `owner/repo` o texto libre. Si el hallazgo ya existe, devuelve la ficha existente.
 

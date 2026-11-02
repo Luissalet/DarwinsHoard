@@ -53,6 +53,7 @@ function show(view) {
   ({ overview: loadOverview, history: loadHistory, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps })[view]?.();
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.view)));
+window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v && v !== state.view) show(v); });
 document.addEventListener('click', (ev) => {
   const a = ev.target.closest('[data-app]');
   if (a) { ev.stopPropagation(); $('f-target').value = a.dataset.app; state.page = 0; show('history'); }
@@ -122,7 +123,7 @@ $('btn-verify').addEventListener('click', async () => {
 async function loadWaSettings() {
   try {
     const st = await api('/api/settings');
-    if (st.whatsapp_chat && ![...$('wa-chat').options].some((o) => o.value === st.whatsapp_chat)) { const o = document.createElement('option'); o.value = st.whatsapp_chat; o.textContent = st.whatsapp_chat; $('wa-chat').appendChild(o); }
+    if (st.whatsapp_chat && ![...$('wa-chat').options].some((o) => o.value === st.whatsapp_chat)) { const o = document.createElement('option'); o.value = st.whatsapp_chat; o.textContent = st.whatsapp_chat_name || st.whatsapp_chat; $('wa-chat').appendChild(o); }
     $('wa-chat').value = st.whatsapp_chat || '';
   } catch { /* ignore */ }
 }
@@ -136,7 +137,7 @@ $('wa-find').addEventListener('click', async () => {
     $('wa-status').textContent = `${r.chats.length} chats en el puente.${g ? ' Gittrend encontrado.' : ''}`;
   } catch (e) { $('wa-status').textContent = /not running|ConnectError|503/.test(e.message) ? 'El puente de WhatsApp de Faustus está parado. Arráncalo en Faustus (Herramientas → WhatsApp) y vincúlalo escaneando el QR con el móvil; después pulsa «Buscar chats».' : `No se pudo leer el puente de WhatsApp: ${e.message}`; }
 });
-$('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
+$('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value, whatsapp_chat_name: $('wa-chat').selectedOptions[0]?.textContent || '' } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
 $('wa-sync').addEventListener('click', async () => {
   const b = $('wa-sync'); b.disabled = true; b.textContent = 'Sincronizando…';
   try { const r = await call('darwin_sync_whatsapp', {}); $('wa-status').textContent = r.busy ? 'Ya hay una sincronización en marcha.' : `${r.created} mensajes nuevos, ${r.existing} ya guardados, ${r.sources} enlaces o repos. Cubre lo que guarda el puente, no todo el historial del teléfono.`; loadInbox(); }
@@ -206,13 +207,15 @@ async function openDetail(id) {
         <dt>Clave</dt><dd class="mono">${esc(s.key)}</dd>${g.aliases.length ? `<dt>Alias</dt><dd class="mono">${g.aliases.map(esc).join(', ')}</dd>` : ''}
       </dl>
       ${s.summary ? `<p class="t-sub" style="-webkit-line-clamp:unset">${esc(plain(s.summary))}</p>` : ''}
+      ${meta.triage ? `<p class="meta">Triaje automático: ${meta.triage.app ? `propuesto para ${esc(appName(meta.triage.app))}` : (meta.triage.useful === false ? 'parece ruido' : 'ninguna app encaja')} — ${esc(meta.triage.reason || '')}</p>` : ''}
       <h4>Propuestas (${g.proposals.length})</h4>
       ${g.proposals.map((p) => `<div class="item"><div class="head">${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}${chip(p.state)}
           <span class="meta">${esc(CHANNEL_LABEL[p.origin] || p.origin || '')}${p.agora_task ? ` · Ágora ${esc(p.agora_space)} #${p.agora_task}` : ''}</span></div>
         ${p.reason ? `<div class="body">${esc(p.reason)}</div>` : ''}
         ${p.history.length ? `<div class="hist">${p.history.map((h) => `${whenFull(h.at)}: ${esc(STATE_LABEL[h.old] || h.old)} → ${esc(STATE_LABEL[h.new] || h.new)}${h.note ? ` (${esc(h.note)})` : ''}`).join('<br>')}</div>` : ''}
         <div class="inline-form"><select data-pid="${p.id}">${PROPOSAL_STATES.map((k) => `<option value="${k}" ${k === p.state ? 'selected' : ''}>${STATE_LABEL[k]}</option>`).join('')}</select>
-          <input data-note="${p.id}" placeholder="Motivo del cambio"><button class="btn small" data-save="${p.id}">Cambiar</button></div></div>`).join('') || '<div class="empty">Sin propuestas.</div>'}
+          <input data-note="${p.id}" placeholder="Motivo del cambio"><button class="btn small" data-save="${p.id}">Cambiar</button></div>
+        <div class="debate" data-debate="${p.id}">${p.agora_thread ? `<button class="btn small" data-thread="${p.id}">Ver debate (Ágora #${p.agora_thread})</button>` : `<button class="btn small" data-discuss="${p.id}">Debatir en el Ágora</button>`}</div></div>`).join('') || '<div class="empty">Sin propuestas.</div>'}
       <div class="inline-form"><select id="new-target"><option value="">Proponer para…</option>${Object.keys(state.names).sort((a, b) => appName(a).localeCompare(appName(b))).map((a) => `<option value="${esc(a)}">${esc(appName(a))}</option>`).join('')}</select>
         <input id="new-reason" placeholder="Por qué"><button class="btn small" id="new-propose">Proponer</button></div>
       <h4>Entregas (${g.deliveries.length})</h4>
@@ -225,6 +228,8 @@ async function openDetail(id) {
       ${g.captures.map((c) => `<div class="item"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
         <div class="body">${esc((c.text || '').slice(0, 600))}</div>
         <div class="prov">${c.provenance?.file ? `${esc(c.provenance.file)}:${c.provenance.line}` : ''}${c.provenance?.task ? `Ágora ${esc(c.provenance.space)} #${c.provenance.task}` : ''}${c.provenance?.file_sha256 ? ` · sha256 ${esc(c.provenance.file_sha256.slice(0, 12))}…` : ''}</div></div>`).join('')}`;
+    el.querySelectorAll('[data-discuss]').forEach((btn) => btn.addEventListener('click', () => discussProposal(+btn.dataset.discuss, true)));
+    el.querySelectorAll('[data-thread]').forEach((btn) => btn.addEventListener('click', () => discussProposal(+btn.dataset.thread, false)));
     el.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', async () => {
       const pid = +b.dataset.save;
       try { await call('darwin_set_state', { entity: 'proposals', id: pid, field: 'state', value: el.querySelector(`[data-pid="${pid}"]`).value, note: el.querySelector(`[data-note="${pid}"]`).value, by: 'luis' }); toast('Estado cambiado.'); openDetail(id); loadHistory(); }
@@ -435,3 +440,71 @@ loadWaSettings();
 api('/api/inbox?limit=1').then((r) => { $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total; }).catch(() => {});
 loadNames().catch(fail).finally(() => { show((location.hash || '#overview').slice(1)); updateBadge(); });
 if (!store('darwin.lastVisit')) store('darwin.lastVisit', String(Date.now() / 1000));
+
+
+// ------------------------------------------------------------------ ask
+
+function linkCites(text, ids) {
+  return esc(text).replace(/\[#(\d+)\]/g, (m, n) => `<a href="#" data-open="${n}">[#${n}]</a>`);
+}
+$('ask-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const q = $('ask-q').value.trim();
+  if (q.length < 3) return;
+  const out = $('ask-out');
+  $('ask-go').disabled = true;
+  out.innerHTML = '<p class="meta">Buscando en el árbol y el historial y preguntando al modelo local…</p>';
+  try {
+    const r = await call('darwin_ask', { question: q });
+    const apps = (r.apps || []).map((a) => appChip(a.app_id)).join(' ');
+    const disc = (r.discoveries || []).slice(0, 8).map((d) => `<li><a href="#" data-open="${d.id}">#${d.id} ${esc(d.title || '')}</a> ${chip(d.state)}</li>`).join('');
+    out.innerHTML = `${r.answer ? `<div class="ask-answer">${linkCites(r.answer).replace(/\n/g, '<br>')}</div>` : `<p class="meta">${esc(r.note || 'Sin respuesta del modelo.')}</p>`}
+      ${apps ? `<div class="ask-row"><span class="meta">Apps que lo cubren:</span> ${apps}</div>` : ''}
+      ${disc ? `<details class="ask-row"${r.answer ? '' : ' open'}><summary class="meta">Descubrimientos relacionados (${r.discoveries.length})</summary><ul>${disc}</ul></details>` : ''}
+      ${r.model ? `<div class="meta">Modelo: ${esc(r.model)}</div>` : ''}`;
+    out.querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('history'); openDetail(+a.dataset.open); }));
+  } catch (e) { out.innerHTML = ''; fail(e); } finally { $('ask-go').disabled = false; }
+});
+
+
+// ------------------------------------------------------------------ triage
+
+let triageTimer = null;
+function triageText(j) {
+  if (j.running) return j.total ? `Proponiendo apps… ${j.done}/${j.total}` : 'Proponiendo apps…';
+  if (j.error) return `Triaje detenido: ${j.error}`;
+  if (j.finished) return `Último triaje: ${(j.proposed || []).length} propuestas, ${j.skipped || 0} sin app, ${j.noise || 0} ruido.`;
+  return '';
+}
+async function triageStatus() {
+  try {
+    const j = await api('/api/triage');
+    $('f-triage-status').textContent = triageText(j);
+    $('f-triage').disabled = !!j.running;
+    clearTimeout(triageTimer);
+    if (j.running) triageTimer = setTimeout(async () => { const k = await api('/api/triage'); if (!k.running) { loadHistory(); triageStatus(); } else triageStatus(); }, 3000);
+  } catch (e) { /* optional */ }
+}
+$('f-triage').addEventListener('click', async () => {
+  try { await api(`/api/triage?channel=${encodeURIComponent($('f-channel').value)}&limit=100`, { method: 'POST' }); triageStatus(); } catch (e) { fail(e); }
+});
+triageStatus();
+
+
+// ------------------------------------------------------------------ debate in the Ágora
+
+function renderThread(box, pid, r) {
+  const msgs = (r.messages || []).map((m) => `<div class="msg"><span class="meta">${esc(m.by || '?')} · ${esc(m.kind || '')}${m.at ? ' · ' + whenFull(m.at) : ''}</span><div>${esc(m.body || '').replace(/\n/g, '<br>')}</div></div>`).join('');
+  box.innerHTML = `<div class="thread"><div class="meta">Ágora · ${esc(r.thread?.space || 'darwin')} · hilo #${r.thread?.id}${r.thread?.status ? ' · ' + esc(r.thread.status) : ''}${r.error ? ' · ' + esc(r.error) : ''}</div>${msgs || '<div class="meta">Sin mensajes todavía.</div>'}
+    <div class="inline-form"><input data-reply="${pid}" placeholder="Tu nota (la publica Darwin en tu nombre)"><button class="btn small" data-send="${pid}">Añadir al debate</button></div></div>`;
+  box.querySelector('[data-send]').addEventListener('click', async () => {
+    const note = box.querySelector('[data-reply]').value.trim(); if (!note) return;
+    try { renderThread(box, pid, await call('darwin_discuss', { proposal_id: pid, note })); toast('Nota añadida al debate.'); } catch (e) { fail(e); }
+  });
+}
+async function discussProposal(pid, open) {
+  const box = document.querySelector(`[data-debate="${pid}"]`);
+  box.innerHTML = '<span class="meta">Cargando el debate…</span>';
+  try { renderThread(box, pid, open ? await call('darwin_discuss', { proposal_id: pid }) : await api(`/api/proposals/${pid}/thread`)); }
+  catch (e) { box.innerHTML = ''; fail(e); }
+}

@@ -8,12 +8,12 @@ Port **5233**, id `darwin`, part of the Hoard family (Faustus copilot, Hoard Hub
 
 | View | What is in it |
 |---|---|
-| **Resumen** | Counts, discoveries per state, apps with most proposals, where discoveries come from, deliveries (declared and proven in the main branch), the Gittrend chat sync and the imports with the file hash of each. |
-| **Historial** | Every discovery, filterable by text, `owner/repo`, URL or radar number, state, app, origin and "only the ones I marked 📌", in several orders. Each one opens its genealogy: appearances with file and line, proposals per app with their history, deliveries with commits and whether the commit is in the main branch. Proposal states can be changed and new proposals made from there. |
+| **Resumen** | **Pregunta a Darwin**: a question in plain words («¿qué tenemos para transcribir reuniones?») answered from the tree, the discoveries and the gaps by the family's local model, citing discoveries by number and naming the apps that cover it. Counts, discoveries per state, apps with most proposals, where discoveries come from, deliveries (declared and proven in the main branch), the Gittrend chat sync and the imports with the file hash of each. |
+| **Historial** | Every discovery, filterable by text, `owner/repo`, URL or radar number, state, app, origin and "only the ones I marked 📌", in several orders. Each one opens its genealogy: appearances with file and line, proposals per app with their history, deliveries with commits and whether the commit is in the main branch. Proposal states can be changed and new proposals made from there. **Debatir en el Ágora** opens one thread per proposal in the Ágora (space `darwin`) with the genealogy, shows its messages in the card and takes notes (posted by the agent `darwin`, marked as Luis's). **Proponer apps (IA)** has the local model suggest an app for every discovery without a proposal (pending proposals with origin *agent*; Luis's decisions are never overwritten; noise is marked as such). |
 | **Bandeja** | Captures that have no source yet (a chat note, a screenshot without a link), with the image and the text the OCR read in it. They are never dropped; one click turns them into a discovery. **Leer capturas (OCR)** reads the unread screenshots with the family's OCR (Kafka's engine) and links the URLs it finds and the `owner/repo` names GitHub confirms; it also runs on its own after a chat sync brings new messages. |
 | **Árbol** | Faustus (root) > Hoard Hub > Hoards > absorbed modules > capabilities > the tools Faustus really sees, with evidence (*declarada* from a manifest, *viva* from Faustus's tool catalogue) and state (*disponible*, *detenida*). A "¿Quién hace…?" search answers which apps already cover something, with the path of each match. |
 | **Novedades** | New discoveries, state changes and deliveries since the last visit (or the last day, week or month). |
-| **Carencias** | Things that are wanted and no app does yet, with the condition that would make them possible. |
+| **Carencias** | Things that are wanted and no app does yet, with the condition that would make them possible. The Hoards whose `OBJETIVOS.md` is a plain list feed it on every import (one gap per item, for that app); an item that leaves its file closes its gap. Long logs (Faustus's, Writer's) are skipped. |
 
 The **Añadir** box in the header takes a URL, `owner/repo` or free text and returns the existing record when there is one.
 
@@ -44,7 +44,9 @@ A source is identified by `repo:owner/name` (lower case; the GitHub id, when kno
 
 ## Tools (MCP and the page)
 
-`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_import_legacy`.
+`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_ask`, `darwin_triage`, `darwin_discuss`, `darwin_import_legacy`.
+
+From PowerShell (scheduled agents, other apps): `darwin.ps1 <tool> -ArgsFile args.json` (UTF-8 JSON), `darwin.ps1 -List`. The radar's instructions through Darwin are in [docs/RADAR.md](docs/RADAR.md).
 
 The MCP bridge (`mcp_server.py`, stdio) proxies every call to the running app with the token in `data/mcp-token` and starts the app when nothing answers.
 

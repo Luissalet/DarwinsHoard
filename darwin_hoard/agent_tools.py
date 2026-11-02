@@ -109,6 +109,20 @@ class ChatsArgs(BaseModel):
     query: str = Field("", max_length=100, description="Part of the chat name, e.g. Gittrend.")
 
 
+class AskArgs(BaseModel):
+    question: str = Field(..., min_length=3, max_length=500, description="A question in plain words, e.g. «¿qué tenemos para transcribir reuniones?».")
+
+
+class DiscussArgs(BaseModel):
+    proposal_id: int = Field(..., ge=1)
+    note: str = Field("", max_length=4000, description="Optional note to add (posted by the agent darwin, marked as Luis's).")
+
+
+class TriageArgs(BaseModel):
+    channel: str = Field("", max_length=30, description="Only discoveries that arrived through this channel (e.g. whatsapp).")
+    limit: int = Field(20, ge=1, le=200)
+
+
 class OcrArgs(BaseModel):
     limit: int = Field(60, ge=1, le=500, description="How many unread screenshots to read in this call.")
 
@@ -255,6 +269,17 @@ TOOLS: list[Tool] = [
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
                                     "Read only: it never sends or marks anything as read.", "gittrend, sincronizar whatsapp"),
          SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages), timeout_s=600),
+    Tool("darwin_ask", _d("Answer a question in plain words from the capability tree, the discoveries and the gaps, citing them.",
+                          "Retrieval runs locally; the answer is written by the family's local model. Without a model the material is returned.",
+                          "pregunta, preguntar, qué tenemos, quién hace"),
+         AskArgs, ann(read_only=True), lambda s, a: s.ask(a.question), timeout_s=180),
+    Tool("darwin_discuss", _d("Open (or show) the Ágora thread that debates one proposal, with the discovery's genealogy; an optional note is added.",
+                              "One thread per proposal, kept on it; Darwin writes as the agent darwin.", "debatir, discutir, ágora"),
+         DiscussArgs, ann(), lambda s, a: s.discuss(a.proposal_id, a.note), timeout_s=60),
+    Tool("darwin_triage", _d("Suggest an app for discoveries nobody proposed yet: a pending proposal with origin agent, or a note that it is noise.",
+                             "The family's local model picks from the real app catalogue; Luis's decisions are never overwritten.",
+                             "repartir, clasificar, triaje, proponer apps"),
+         TriageArgs, ann(idempotent=True), lambda s, a: s.triage(channel=a.channel, limit=a.limit), timeout_s=900),
     Tool("darwin_read_screenshots", _d("Read the unread screenshots in the inbox with the family's OCR and link the repositories and links they show.",
                                        "URLs are taken as read; bare owner/name only when GitHub confirms the repository. An image is read once.",
                                        "ocr, capturas, fotos, pantallazos"),

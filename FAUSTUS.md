@@ -18,6 +18,9 @@
 | Bulk ingestion from another app | `darwin_ingest` |
 | Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch), `darwin_tree_refresh` |
 | WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor) |
+| A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
+| Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
+| Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
 
@@ -29,7 +32,7 @@
 
 ## What it cannot do (yet)
 
-- Fitness ranking of discoveries, gap-driven radar searches and Brain export (see OBJETIVOS.md).
+- Fitness ranking of discoveries and Brain export (see OBJETIVOS.md). The radar through Darwin is written ([docs/RADAR.md](docs/RADAR.md)) but the scheduled task is disabled and its instructions need Luis's approval to change.
 - Read WhatsApp history the bridge never received.
 
 ## Icono de familia (2026-11-02)
