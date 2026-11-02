@@ -113,6 +113,16 @@ class AskArgs(BaseModel):
     question: str = Field(..., min_length=3, max_length=500, description="A question in plain words, e.g. «¿qué tenemos para transcribir reuniones?».")
 
 
+class LoginArgs(BaseModel):
+    site: Literal["x", "instagram", "threads", "tiktok", "reddit", "facebook", "youtube"]
+    finish: bool = Field(False, description="Luis says he finished signing in: save the session now.")
+    cancel: bool = Field(False, description="Close the sign-in window.")
+
+
+class PostsArgs(BaseModel):
+    limit: int = Field(30, ge=1, le=300)
+
+
 class DiscussArgs(BaseModel):
     proposal_id: int = Field(..., ge=1)
     note: str = Field("", max_length=4000, description="Optional note to add (posted by the agent darwin, marked as Luis's).")
@@ -273,6 +283,15 @@ TOOLS: list[Tool] = [
                           "Retrieval runs locally; the answer is written by the family's local model. Without a model the material is returned.",
                           "pregunta, preguntar, qué tenemos, quién hace"),
          AskArgs, ann(read_only=True), lambda s, a: s.ask(a.question), timeout_s=180),
+    Tool("darwin_accounts", _d("Which sites Links holds a signed-in session for (X, Instagram, Threads, TikTok, Reddit…), to read posts.",
+                               "No cookie values are ever returned.", "cuentas, sesiones, conectar instagram, conectar x"),
+         Empty, ann(read_only=True), lambda s, a: s.accounts(), timeout_s=30),
+    Tool("darwin_account_login", _d("Open Links' sign-in window for a site on Luis's computer; he signs in himself and the session is kept.",
+                                    "Never ask for or type a password.", "conectar cuenta, iniciar sesión"),
+         LoginArgs, ann(), lambda s, a: s.account_login(a.site, finish=a.finish, cancel=a.cancel), timeout_s=60),
+    Tool("darwin_read_posts", _d("Read the social posts behind discoveries (X, Instagram, Threads…) with the signed-in sessions and link the repositories and links inside.",
+                                 "Each post is read once; a login wall stops the run and names the site.", "leer tuits, leer posts, de qué repo habla"),
+         PostsArgs, ann(idempotent=True), lambda s, a: s.read_posts(limit=a.limit), timeout_s=900),
     Tool("darwin_discuss", _d("Open (or show) the Ágora thread that debates one proposal, with the discovery's genealogy; an optional note is added.",
                               "One thread per proposal, kept on it; Darwin writes as the agent darwin.", "debatir, discutir, ágora"),
          DiscussArgs, ann(), lambda s, a: s.discuss(a.proposal_id, a.note), timeout_s=60),

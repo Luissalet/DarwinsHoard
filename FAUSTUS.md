@@ -21,6 +21,7 @@
 | A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
 | Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |
+| Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
 

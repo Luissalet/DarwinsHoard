@@ -127,3 +127,8 @@ ul.tree ul { padding-left: 18px; border-left: 1px dashed var(--hoard-border); ma
 .debate { margin-top: 6px; }
 .thread { border-left: 2px solid var(--hoard-accent-line); padding-left: 8px; margin-top: 6px; }
 .thread .msg { margin: 6px 0; font-size: 13px; }
+
+/* Accounts for reading posts */
+.acc-sites { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.acc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.acc-name { min-width: 90px; font-weight: 600; }
