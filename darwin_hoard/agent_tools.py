@@ -35,7 +35,8 @@ class FindArgs(BaseModel):
     pinned: Optional[bool] = Field(None, description="Only what Luis marked himself (📌).")
     radar_from: Optional[int] = Field(None, ge=0, le=100000)
     radar_to: Optional[int] = Field(None, ge=0, le=100000)
-    order: Literal["recent", "oldest", "radar", "radar_desc", "captures", "title"] = "recent"
+    order: Literal["recent", "oldest", "radar", "radar_desc", "captures", "title", "fitness"] = Field(
+        "recent", description="fitness = open discoveries most worth a look first (gaps, reappearances, stars, licence, recency).")
     limit: int = Field(30, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
@@ -283,6 +284,9 @@ TOOLS: list[Tool] = [
                           "Retrieval runs locally; the answer is written by the family's local model. Without a model the material is returned.",
                           "pregunta, preguntar, qué tenemos, quién hace"),
          AskArgs, ann(read_only=True), lambda s, a: s.ask(a.question), timeout_s=180),
+    Tool("darwin_brain_export", _d("Write Darwin into Faustus's Brain as linked Markdown notes (Notes/Darwin: index, one note per app, one per live discovery).",
+                                   "Only Darwin's own notes are overwritten or removed; runs every few hours on its own.", "cerebro, brain, exportar, notas"),
+         Empty, ann(idempotent=True), lambda s, a: s.brain_export(), timeout_s=300),
     Tool("darwin_accounts", _d("Which sites Links holds a signed-in session for (X, Instagram, Threads, TikTok, Reddit…), to read posts.",
                                "No cookie values are ever returned.", "cuentas, sesiones, conectar instagram, conectar x"),
          Empty, ann(read_only=True), lambda s, a: s.accounts(), timeout_s=30),
