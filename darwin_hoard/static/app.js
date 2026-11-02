@@ -182,7 +182,7 @@ async function loadHistory() {
     tb.innerHTML = r.items.map((i) => `<tr data-id="${i.id}" class="${state.selected === i.id ? 'sel' : ''}">
       <td class="num">${i.radar_no ?? ''}</td>
       <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div><div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
-      <td>${chip(i.state)}${proofChip(i.proof)}</td>
+      <td>${chip(i.state)}${proofChip(i.proof)}${i.fitness ? `<span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>` : ''}</td>
       <td>${i.targets.map(appChip).join('')}</td>
       <td class="num">${i.captures}</td><td class="meta">${when(i.last_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
     tb.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => openDetail(+tr.dataset.id)));
@@ -208,6 +208,7 @@ async function openDetail(id) {
         <dt>Clave</dt><dd class="mono">${esc(s.key)}</dd>${g.aliases.length ? `<dt>Alias</dt><dd class="mono">${g.aliases.map(esc).join(', ')}</dd>` : ''}
       </dl>
       ${s.summary ? `<p class="t-sub" style="-webkit-line-clamp:unset">${esc(plain(s.summary))}</p>` : ''}
+      ${g.fitness && g.fitness.score ? `<p class="meta">Puntuación ${g.fitness.score}/100: ${esc(g.fitness.reasons.join(' · '))}</p>` : ''}
       ${meta.triage ? `<p class="meta">Triaje automático: ${meta.triage.app ? `propuesto para ${esc(appName(meta.triage.app))}` : (meta.triage.useful === false ? 'parece ruido' : 'ninguna app encaja')} — ${esc(meta.triage.reason || '')}</p>` : ''}
       <h4>Propuestas (${g.proposals.length})</h4>
       ${g.proposals.map((p) => `<div class="item"><div class="head">${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}${chip(p.state)}

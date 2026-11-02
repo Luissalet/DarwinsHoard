@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import json
+import re
 import threading
 import time
 from pathlib import Path
@@ -28,6 +29,9 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "radar_ideas": r"E:\Development\IA\Research\claude\radar-ideas.md",
     "faustus_url": "http://127.0.0.1:7000",
     "tree_refresh_minutes": 60,
+    "brain_vault_dir": "",              # Faustus's Brain vault; empty = <Faustus>/data/brain/vault
+    "brain_owner": "auto",              # Faustus user whose vault receives Notes/Darwin; auto = shared vault when Faustus has no login, else admin
+    "brain_export_minutes": 360,        # 0 = only on demand
 }
 
 
@@ -82,6 +86,12 @@ class Services:
                     last_sync = self.store.get_meta("whatsapp_last_sync", 0) or 0
                     if time.time() - last_sync > 60 * max(5, every):
                         self.sync_whatsapp()
+                brain_every = int(self.settings.get("brain_export_minutes") or 0)
+                if brain_every and time.time() - (self.store.get_meta("brain_exported_at", 0) or 0) > 60 * max(15, brain_every):
+                    try:
+                        self.brain_export()
+                    except FileNotFoundError:
+                        self.store.set_meta("brain_exported_at", time.time())  # no vault here: try again next period
             except Exception:  # noqa: BLE001 - never kill the loop
                 log.exception("tree refresh")
             self._stop.wait(300)
@@ -206,6 +216,24 @@ class Services:
         from . import debate
         hub, headers, fetch = self._hub_io()
         return debate.thread(self.store, proposal_id, hub, headers, fetch)
+
+    def brain_export(self) -> dict[str, Any]:
+        from . import brain_export
+        base = Path(self.settings.get("brain_vault_dir") or Path(self.config.faustus_dir) / "data" / "brain" / "vault")
+        owner = str(self.settings.get("brain_owner") or "auto")
+        if owner == "auto":
+            try:
+                status = self._faustus_get("/api/auth/status", {})
+            except Exception:  # noqa: BLE001 - Faustus closed: its usual single-user setup
+                status = {}
+            owner = "_shared" if status.get("auth_disabled") or not status.get("auth_enabled", True) else "admin"
+        owner = re.sub(r'[<>:"/\\|?*]+', "_", owner)[:60]
+        if not base.exists():
+            raise FileNotFoundError(f"Faustus's Brain vault is not at {base} (set brain_vault_dir).")
+        result = brain_export.export(self.store, base / owner)
+        result["owner"] = owner
+        self.store.set_meta("brain_exported_at", time.time())
+        return result
 
     def ask(self, question: str) -> dict[str, Any]:
         from . import ask as asker

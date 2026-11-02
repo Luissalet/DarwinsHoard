@@ -21,6 +21,8 @@
 | A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
 | Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |
+| What is most worth a look | `darwin_find` with `order: fitness` (score and reasons per discovery) |
+| Darwin in the Brain | `darwin_brain_export` (Notes/Darwin, linked notes; also every few hours) |
 | Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
@@ -33,7 +35,7 @@
 
 ## What it cannot do (yet)
 
-- Fitness ranking of discoveries and Brain export (see OBJETIVOS.md). The radar through Darwin is written ([docs/RADAR.md](docs/RADAR.md)) but the scheduled task is disabled and its instructions need Luis's approval to change.
+- The radar through Darwin is written ([docs/RADAR.md](docs/RADAR.md)) but the scheduled task still has to be switched to it.
 - Read WhatsApp history the bridge never received.
 
 ## Icono de familia (2026-11-02)

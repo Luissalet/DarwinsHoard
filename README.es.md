@@ -23,6 +23,8 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
   - Cada nodo indica su evidencia (*declarada*, *viva*) y su estado (*disponible*, *detenida*).
   - El buscador «¿Quién hace…?» dice qué apps cubren ya algo y su ruta en el árbol.
 - **Cuentas para leer posts** (en Resumen): conectas X, Instagram, Threads, TikTok, Reddit, Facebook o YouTube; se abre una ventana de Links en tu ordenador y entras tú, sin que la contraseña pase por Darwin. «Leer posts» lee los tuits y posts enlazados y convierte en hallazgos los repos y enlaces que contienen. Si un sitio no deja leer, se para y te dice qué cuenta conectar.
+- **Puntuación**: cada hallazgo abierto tiene una nota de 0 a 100 con sus motivos (encaja con una carencia, reaparece, estrellas, licencia, novedad, es un repo concreto). Historial ordena por ella con «Más interesantes».
+- **Brain de Faustus**: Darwin escribe notas enlazadas en `Notes/Darwin/` del Brain (índice, una por app y una por hallazgo vivo) cada pocas horas o con `darwin_brain_export`; solo reescribe sus propias notas.
 - **Novedades**: lo nuevo desde la última visita, o del último día, semana o mes.
 - **Carencias**: lo que se quiere y ninguna app hace todavía. Se alimenta de los OBJETIVOS.md de cada Hoard que sean una lista; cuando un objetivo sale del fichero, su carencia se cierra.
 
