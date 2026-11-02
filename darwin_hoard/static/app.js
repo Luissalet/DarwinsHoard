@@ -40,7 +40,12 @@ function store(key, value) { try { if (value === undefined) return localStorage.
 
 // ------------------------------------------------------------------ navigation
 
+const VIEW_ALIASES = { resumen: 'overview', historial: 'history', bandeja: 'inbox', arbol: 'tree', 'árbol': 'tree', novedades: 'changes', carencias: 'gaps' };
+const VIEWS = ['overview', 'history', 'inbox', 'tree', 'changes', 'gaps'];
+
 function show(view) {
+  view = VIEW_ALIASES[decodeURIComponent(view || '').toLowerCase()] || view;
+  if (!VIEWS.includes(view)) view = 'overview';
   state.view = view;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
