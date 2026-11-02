@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 import threading
 import time
 from pathlib import Path
@@ -52,6 +53,7 @@ class Services:
         self.importer = LegacyImporter(self.store)
         self.ocr_job: dict[str, Any] = {"running": False}
         self.triage_job: dict[str, Any] = {"running": False}
+        self.posts_job: dict[str, Any] = {"running": False}
         self.started = time.time()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -183,7 +185,8 @@ class Services:
                     break
             self.store.set_meta("whatsapp_last_sync", time.time())
             if totals["created"]:
-                self.start_ocr()  # new screenshots: read them in the background
+                self.start_ocr()    # new screenshots: read them in the background
+                self.start_posts()  # new post links: read them through Links' sessions
             return {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
                     "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
         finally:
@@ -208,6 +211,64 @@ class Services:
         from . import ask as asker
         from .hoard_link import family
         return asker.ask(self.store, question, chat=family.chat)
+
+    # ------------------------------------------------------------------ social posts (through Links' signed-in sessions)
+
+    def links_call(self, app: str, tool: str, arguments: dict[str, Any], timeout: float = 60.0) -> dict[str, Any]:
+        """Call a tool of another Hoard through the hub; if the app is not running, ask the hub to start it and retry once."""
+        from .hoard_link import family
+        res = family.call(app, tool, arguments, timeout=timeout)
+        refused = not res.get("ok") and any(w in str(res.get("error") or "") for w in ("refused", "10061", "not running", "unreachable"))
+        if refused:
+            hub, headers, fetch = self._hub_io()
+            fetch(f"{hub}/api/apps/{app}/start", {}, method="POST", timeout=20.0, headers=headers)
+            deadline = time.time() + 45
+            while time.time() < deadline:
+                time.sleep(2)
+                res = family.call(app, tool, arguments, timeout=timeout)
+                if res.get("ok") or not any(w in str(res.get("error") or "") for w in ("refused", "10061", "not running", "unreachable")):
+                    break
+        return res
+
+    def accounts(self) -> dict[str, Any]:
+        res = self.links_call("links", "site_sessions", {}, timeout=20.0)
+        body = res.get("result") if isinstance(res.get("result"), dict) else {}
+        if not res.get("ok"):
+            return {"ok": False, "error": res.get("error") or "Links did not answer", "sites": []}
+        keep = {"x", "instagram", "threads", "tiktok", "reddit", "facebook", "youtube"}
+        return {"ok": True, "browser": (body.get("browser") or {}).get("name"), "active": body.get("active"),
+                "sites": [s for s in body.get("sites") or [] if s.get("id") in keep]}
+
+    def account_login(self, site: str, *, finish: bool = False, cancel: bool = False) -> dict[str, Any]:
+        res = self.links_call("links", "site_login", {"site": site, "finish": finish, "cancel": cancel}, timeout=40.0)
+        if not res.get("ok"):
+            raise RuntimeError(res.get("error") or json.dumps(res.get("result") or {}, ensure_ascii=False)[:300])
+        return self.accounts()
+
+    def read_posts(self, *, limit: int = 30) -> dict[str, Any]:
+        from . import social
+        from .hoard_link import family
+        lock = self._sync_locks.setdefault("posts", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"busy": True, **self.posts_job}
+        try:
+            self.posts_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+            result = social.read_posts(self.store, self.links_call, limit=limit,
+                                       on_progress=lambda d, t: self.posts_job.update(done=d, total=t))
+            self.posts_job = {"running": False, "finished": time.time(), **result}
+            return result
+        except Exception as exc:  # noqa: BLE001
+            self.posts_job = {"running": False, "finished": time.time(), "error": str(exc)}
+            raise
+        finally:
+            lock.release()
+
+    def start_posts(self, *, limit: int = 30) -> dict[str, Any]:
+        if self.posts_job.get("running"):
+            return dict(self.posts_job)
+        self.posts_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+        threading.Thread(target=lambda: self._safe(self.read_posts, limit=limit), name="darwin-posts", daemon=True).start()
+        return dict(self.posts_job)
 
     def triage(self, *, channel: str = "", limit: int = 50) -> dict[str, Any]:
         """Suggest an app for discoveries without proposals (see :mod:`triage`); one run at a time."""

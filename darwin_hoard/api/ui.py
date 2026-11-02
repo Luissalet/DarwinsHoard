@@ -79,6 +79,31 @@ def proposal_thread(request: Request, proposal_id: int):
     return services(request).proposal_thread(proposal_id)
 
 
+@router.get("/api/accounts")
+def accounts(request: Request):
+    return services(request).accounts()
+
+
+@router.post("/api/accounts/{site}/login")
+def account_login(request: Request, site: str, finish: bool = False, cancel: bool = False):
+    if site not in ("x", "instagram", "threads", "tiktok", "reddit", "facebook", "youtube"):
+        raise DarwinError("invalid", f"Unknown site {site}.")
+    try:
+        return services(request).account_login(site, finish=finish, cancel=cancel)
+    except RuntimeError as exc:
+        raise DarwinError("unavailable", str(exc)) from exc
+
+
+@router.get("/api/posts")
+def posts_status(request: Request):
+    return services(request).posts_job
+
+
+@router.post("/api/posts")
+def posts_start(request: Request, limit: int = 30):
+    return services(request).start_posts(limit=max(1, min(limit, 300)))
+
+
 @router.get("/api/triage")
 def triage_status(request: Request):
     return services(request).triage_job

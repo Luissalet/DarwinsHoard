@@ -86,6 +86,7 @@ function bars(el, entries, onClick) {
 }
 
 async function loadOverview() {
+  loadAccounts(); postsStatus();
   try {
     const ov = await api('/api/overview');
     const c = ov.counts;
@@ -508,3 +509,47 @@ async function discussProposal(pid, open) {
   try { renderThread(box, pid, open ? await call('darwin_discuss', { proposal_id: pid }) : await api(`/api/proposals/${pid}/thread`)); }
   catch (e) { box.innerHTML = ''; fail(e); }
 }
+
+
+// ------------------------------------------------------------------ accounts and posts
+
+const ACC_LABEL = { x: 'X', instagram: 'Instagram', threads: 'Threads', tiktok: 'TikTok', reddit: 'Reddit', facebook: 'Facebook', youtube: 'YouTube' };
+let accTimer = null;
+async function loadAccounts() {
+  const box = $('acc-sites');
+  try {
+    const r = await api('/api/accounts');
+    if (!r.ok) { box.innerHTML = `<p class="meta">Links no responde (${esc(r.error || '')}). Ábrelo desde el Hub.</p>`; return; }
+    const active = r.active && r.active.open ? r.active : null;
+    box.innerHTML = r.sites.map((s) => `<div class="acc"><span class="acc-name">${esc(ACC_LABEL[s.id] || s.label)}</span>
+      ${s.logged_in ? `<span class="chip st-integrada">conectada</span>` : `<span class="chip">sin conectar</span>`}
+      ${active && active.site === s.id ? `<span class="meta">${esc(active.detail || 'Ventana abierta')}</span><button class="btn small" data-acc-finish="${s.id}">Ya he entrado</button><button class="btn small" data-acc-cancel="${s.id}">Cancelar</button>`
+        : `<button class="btn small" data-acc-login="${s.id}">${s.logged_in ? 'Volver a conectar' : 'Conectar'}</button>`}</div>`).join('');
+    box.querySelectorAll('[data-acc-login]').forEach((b) => b.addEventListener('click', () => accAction(b.dataset.accLogin, '')));
+    box.querySelectorAll('[data-acc-finish]').forEach((b) => b.addEventListener('click', () => accAction(b.dataset.accFinish, '?finish=true')));
+    box.querySelectorAll('[data-acc-cancel]').forEach((b) => b.addEventListener('click', () => accAction(b.dataset.accCancel, '?cancel=true')));
+    clearTimeout(accTimer);
+    if (active) accTimer = setTimeout(loadAccounts, 3000);
+  } catch (e) { box.innerHTML = `<p class="meta">${esc(e.message)}</p>`; }
+}
+async function accAction(site, q) {
+  try { await api(`/api/accounts/${site}/login${q}`, { method: 'POST' }); if (!q) toast(`Se ha abierto una ventana para entrar en ${ACC_LABEL[site]}. Inicia sesión allí.`); loadAccounts(); } catch (e) { fail(e); }
+}
+let postsTimer = null;
+function postsText(j) {
+  if (j.running) return j.total ? `Leyendo posts… ${j.done}/${j.total}` : 'Leyendo posts…';
+  if (j.login_needed) return `Para seguir, conecta ${ACC_LABEL[j.login_needed] || j.login_needed} (quedan ${j.remaining}).`;
+  if (j.error) return `Lectura detenida: ${j.error}`;
+  if (j.finished) return `Última lectura: ${j.read || 0} posts, ${j.linked || 0} con repos o enlaces${(j.errors || []).length ? `, ${j.errors.length} con error` : ''}.`;
+  return '';
+}
+async function postsStatus() {
+  try {
+    const j = await api('/api/posts');
+    $('posts-status').textContent = postsText(j);
+    $('posts-read').disabled = !!j.running;
+    clearTimeout(postsTimer);
+    if (j.running) postsTimer = setTimeout(postsStatus, 2500); else if (j.finished && state.view === 'overview') loadAccounts();
+  } catch (e) { /* optional */ }
+}
+$('posts-read').addEventListener('click', async () => { try { await api('/api/posts', { method: 'POST' }); postsStatus(); } catch (e) { fail(e); } });
