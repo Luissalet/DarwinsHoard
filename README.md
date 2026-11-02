@@ -42,12 +42,13 @@ A source is identified by `repo:owner/name` (lower case; the GitHub id, when kno
 | Radar files | `RADAR_GITTREND.md`, `IMPLEMENTACION_RADAR.md`, `GUIA_IMPLEMENTACION.md` (folder set in settings) and the 426-510 entries exported to `radar-ideas.md`. Idempotent: importing twice adds nothing; an edited line becomes a second appearance. |
 | Ágora | Tasks of every space that cite `radar #N` (or carry a `darwin:<id>` label) become proposals for their space's app; a done task with commits adds a declared delivery in the repository the task names. |
 | WhatsApp «Gittrend» | Read only, through Faustus's WhatsApp bridge (`/api/whatsapp/message-page`), page by page with a cursor; nothing is sent or marked as read, and a second sync repeats nothing. Coverage is what the bridge keeps (60 days), not the phone's whole history. Screenshots go to the inbox and through the OCR. |
-| Other apps and agents | `darwin_ingest` (Links, Talos OCR, a chat) and `darwin_add`. |
+| Links' Hoard | Every few hours (and `darwin_import_links`): the links saved in Links with the tag `darwin` and every GitHub repository saved there. Videos and other reading are left out. |
+| Other apps and agents | `darwin_ingest` and `darwin_add`. |
 | Capability tree | The hub's `/api/apps`, Faustus's `/api/tools/catalog`, and the `faustus-plugin.json` manifests when the hub is down. |
 
 ## Tools (MCP and the page)
 
-`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_ask`, `darwin_triage`, `darwin_discuss`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_brain_export`, `darwin_import_legacy`.
+`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_ask`, `darwin_triage`, `darwin_discuss`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_brain_export`, `darwin_import_links`, `darwin_import_legacy`.
 
 From PowerShell (scheduled agents, other apps): `darwin.ps1 <tool> -ArgsFile args.json` (UTF-8 JSON), `darwin.ps1 -List`. The radar's instructions through Darwin are in [docs/RADAR.md](docs/RADAR.md).
 

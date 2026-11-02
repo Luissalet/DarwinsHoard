@@ -86,6 +86,11 @@ class Services:
                     last_sync = self.store.get_meta("whatsapp_last_sync", 0) or 0
                     if time.time() - last_sync > 60 * max(5, every):
                         self.sync_whatsapp()
+                if time.time() - (self.store.get_meta("links_imported_at", 0) or 0) > 60 * 60 * 6:
+                    try:
+                        self.import_links()
+                    except Exception:  # noqa: BLE001 - Links closed: try again next period
+                        self.store.set_meta("links_imported_at", time.time())
                 brain_every = int(self.settings.get("brain_export_minutes") or 0)
                 if brain_every and time.time() - (self.store.get_meta("brain_exported_at", 0) or 0) > 60 * max(15, brain_every):
                     try:
@@ -216,6 +221,12 @@ class Services:
         from . import debate
         hub, headers, fetch = self._hub_io()
         return debate.thread(self.store, proposal_id, hub, headers, fetch)
+
+    def import_links(self) -> dict[str, Any]:
+        from . import links_import
+        result = links_import.import_links(self.store, self.links_call)
+        self.store.set_meta("links_imported_at", time.time())
+        return result
 
     def brain_export(self) -> dict[str, Any]:
         from . import brain_export
