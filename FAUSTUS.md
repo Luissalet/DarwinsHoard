@@ -22,6 +22,7 @@
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
 | Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |
 | What is most worth a look | `darwin_find` with `order: fitness` (score and reasons per discovery) |
+| Links saved for Darwin | `darwin_import_links` (tag `darwin` in Links, or any GitHub repository) |
 | Darwin in the Brain | `darwin_brain_export` (Notes/Darwin, linked notes; also every few hours) |
 | Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
