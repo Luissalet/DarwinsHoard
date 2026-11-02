@@ -366,11 +366,14 @@ class LegacyImporter:
                                          agora_space=space, agora_task=t["id"])
                     rep.proposals += 1
                     if t.get("status") == "done" and t.get("commits"):
+                        repo = t.get("repo") or space
                         for sha in t["commits"]:
-                            self.store.upsert_delivery(key=f"{src['key']}->{tgt}@{sha}", source_id=src["id"], target=tgt, proposal_id=pid,
-                                                       commit_sha=str(sha), implementation="integrada", verification="documentada",
+                            did = self.store.upsert_delivery(key=f"{src['key']}->{tgt}@{sha}", source_id=src["id"], target=tgt, proposal_id=pid,
+                                                       repo=repo, commit_sha=str(sha), implementation="integrada", verification="documentada",
                                                        agora_space=space, agora_task=t["id"],
                                                        declared={"agora_status": "done", "title": t.get("title", "")[:300]})
+                            with self.store.tx() as c:  # the task names the repository; it outranks the space guess
+                                c.execute("UPDATE deliveries SET repo=? WHERE id=? AND COALESCE(repo,'')<>?", (repo, did, repo))
                             rep.deliveries += 1
         self.store.record_import(name="agora", file=hub_url, sha256="", counts=rep.as_dict())
         return rep

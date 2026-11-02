@@ -5,7 +5,7 @@
 const $ = (id) => document.getElementById(id);
 const plain = (s) => String(s ?? '').replace(/\*\*/g, '').replace(/`/g, '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const STATE_LABEL = { integrada: 'Integrada', parcial: 'Parcial', aceptada: 'Aceptada', investigando: 'En marcha', debatida: 'Debatida',
+const STATE_LABEL = { integrada: 'Integrada', mixta: 'En parte', parcial: 'Parcial', aceptada: 'Aceptada', investigando: 'En marcha', debatida: 'Debatida',
   pendiente: 'Pendiente', aplazada: 'Aplazada', cubierta: 'Ya cubierta', descartada: 'Descartada', sin_propuesta: 'Sin propuesta',
   sin_implementar: 'Sin implementar', sustituida: 'Sustituida' };
 const PROPOSAL_STATES = ['pendiente', 'investigando', 'debatida', 'aceptada', 'aplazada', 'descartada', 'cubierta'];
@@ -32,6 +32,8 @@ const fail = (e) => toast(e.hint ? `${e.message} ${e.hint}` : e.message, 'err');
 const when = (t) => t ? new Date(t * 1000).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: '2-digit' }) : '—';
 const whenFull = (t) => t ? new Date(t * 1000).toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short' }) : '—';
 const chip = (st, label) => `<span class="chip st-${esc(st)}">${esc(label || STATE_LABEL[st] || st)}</span>`;
+const PROOF = { en_main: ['commit en main', 'st-integrada'], documentos: ['según documentos', 'st-pendiente'], fuera_de_main: ['commit fuera de main', 'st-aplazada'] };
+const proofChip = (p) => p && PROOF[p] ? `<span class="chip ${PROOF[p][1]}" title="Cómo se sabe que está integrada">${PROOF[p][0]}</span>` : '';
 const appName = (id) => state.names[id] || id;
 const appChip = (id) => `<span class="chip app" data-app="${esc(id)}" title="Ver en el historial">${esc(appName(id))}</span>`;
 function store(key, value) { try { if (value === undefined) return localStorage.getItem(key); localStorage.setItem(key, value); } catch { return null; } return null; }
@@ -43,7 +45,7 @@ function show(view) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   if (location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
-  ({ overview: loadOverview, history: loadHistory, tree: loadTree, changes: loadChanges, gaps: loadGaps })[view]?.();
+  ({ overview: loadOverview, history: loadHistory, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps })[view]?.();
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.view)));
 document.addEventListener('click', (ev) => {
@@ -85,7 +87,7 @@ async function loadOverview() {
       [c.sources, 'descubrimientos'], [c.captures, 'apariciones'], [c.proposals, 'propuestas'], [c.deliveries, 'entregas'],
       [c.capabilities, 'nodos del árbol'], [c.gaps, 'carencias'], [ov.captures_last_7_days, 'nuevas esta semana (sin el histórico)'],
     ].map(([n, l]) => `<div class="kpi"><b>${(n ?? 0).toLocaleString('es-ES')}</b><span>${l}</span></div>`).join('');
-    const order = ['integrada', 'parcial', 'aceptada', 'investigando', 'debatida', 'pendiente', 'aplazada', 'cubierta', 'descartada', 'sin_propuesta'];
+    const order = ['integrada', 'mixta', 'parcial', 'aceptada', 'investigando', 'debatida', 'pendiente', 'aplazada', 'cubierta', 'descartada', 'sin_propuesta'];
     bars($('ov-states'), order.filter((k) => ov.sources_by_state[k]).map((k) => [k, ov.sources_by_state[k], STATE_LABEL[k]]),
       (k) => { $('f-state').value = k; state.page = 0; show('history'); });
     bars($('ov-targets'), ov.targets.slice(0, 14).map((t) => [t.target, t.proposals, appName(t.target)]),
@@ -105,6 +107,35 @@ $('btn-import').addEventListener('click', async () => {
   try { const r = await call('darwin_import_legacy', {}); toast(`Importado: ${r.counts.sources} descubrimientos, ${r.counts.captures} apariciones.`); await loadNames(); loadOverview(); }
   catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Importar histórico'; }
 });
+$('btn-verify').addEventListener('click', async () => {
+  const b = $('btn-verify'); b.disabled = true; b.textContent = 'Comprobando…';
+  try { const r = await call('darwin_verify_deliveries'); const s = r.summary; toast(`Entregas: ${s.integrated || 0} en main, ${s.not_in_main || 0} fuera de main, ${r.checked - (s.integrated || 0) - (s.not_in_main || 0)} sin poder comprobar.`); loadOverview(); }
+  catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Comprobar entregas'; }
+});
+async function loadWaSettings() {
+  try {
+    const st = await api('/api/settings');
+    if (st.whatsapp_chat && ![...$('wa-chat').options].some((o) => o.value === st.whatsapp_chat)) { const o = document.createElement('option'); o.value = st.whatsapp_chat; o.textContent = st.whatsapp_chat; $('wa-chat').appendChild(o); }
+    $('wa-chat').value = st.whatsapp_chat || '';
+  } catch { /* ignore */ }
+}
+$('wa-find').addEventListener('click', async () => {
+  try {
+    const r = await call('darwin_whatsapp_chats', { query: '' });
+    const sel = $('wa-chat'); sel.querySelectorAll('option:not(:first-child)').forEach((o) => o.remove());
+    for (const c of r.chats) { const id = c.jid || c.id; const o = document.createElement('option'); o.value = id; o.textContent = `${c.name || c.chat_name || id}`; sel.appendChild(o); }
+    const g = r.chats.find((c) => /gittrend/i.test(c.name || c.chat_name || ''));
+    if (g) sel.value = g.jid || g.id;
+    $('wa-status').textContent = `${r.chats.length} chats en el puente.${g ? ' Gittrend encontrado.' : ''}`;
+  } catch (e) { $('wa-status').textContent = `El puente de WhatsApp de Faustus no responde (${e.message}). Arráncalo y vincúlalo desde Faustus.`; }
+});
+$('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
+$('wa-sync').addEventListener('click', async () => {
+  const b = $('wa-sync'); b.disabled = true; b.textContent = 'Sincronizando…';
+  try { const r = await call('darwin_sync_whatsapp', {}); $('wa-status').textContent = r.busy ? 'Ya hay una sincronización en marcha.' : `${r.created} mensajes nuevos, ${r.existing} ya guardados, ${r.sources} enlaces o repos. Cubre lo que guarda el puente, no todo el historial del teléfono.`; loadInbox(); }
+  catch (e) { $('wa-status').textContent = e.hint ? `${e.message} ${e.hint}` : e.message; } finally { b.disabled = false; b.textContent = 'Sincronizar'; }
+});
+
 $('btn-tree-refresh').addEventListener('click', async () => {
   try { const r = await call('darwin_tree_refresh'); toast(`Árbol: ${r.nodes} nodos (${r.created} nuevos).`); await loadNames(); loadOverview(); } catch (e) { fail(e); }
 });
@@ -112,10 +143,10 @@ $('btn-tree-refresh').addEventListener('click', async () => {
 // ------------------------------------------------------------------ history
 
 function fillStaticFilters() {
-  for (const k of ['integrada', 'parcial', 'aceptada', 'investigando', 'pendiente', 'aplazada', 'cubierta', 'descartada', 'sin_propuesta']) {
+  for (const k of ['integrada', 'mixta', 'parcial', 'aceptada', 'investigando', 'pendiente', 'aplazada', 'cubierta', 'descartada', 'sin_propuesta']) {
     const o = document.createElement('option'); o.value = k; o.textContent = STATE_LABEL[k]; $('f-state').appendChild(o);
   }
-  for (const [k, l] of Object.entries(CHANNEL_LABEL)) { const o = document.createElement('option'); o.value = k; o.textContent = l; $('f-channel').appendChild(o); }
+  for (const [k, l] of Object.entries(CHANNEL_LABEL)) { for (const sel of [$('f-channel'), $('in-channel')]) { const o = document.createElement('option'); o.value = k; o.textContent = l; sel.appendChild(o); } }
   const saved = JSON.parse(store('darwin.filters') || '{}');
   for (const [id, v] of Object.entries(saved)) { const el = $(id); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
 }
@@ -142,7 +173,7 @@ async function loadHistory() {
     tb.innerHTML = r.items.map((i) => `<tr data-id="${i.id}" class="${state.selected === i.id ? 'sel' : ''}">
       <td class="num">${i.radar_no ?? ''}</td>
       <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div><div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
-      <td>${chip(i.state)}</td>
+      <td>${chip(i.state)}${proofChip(i.proof)}</td>
       <td>${i.targets.map(appChip).join('')}</td>
       <td class="num">${i.captures}</td><td class="meta">${when(i.last_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
     tb.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => openDetail(+tr.dataset.id)));
@@ -160,7 +191,7 @@ async function openDetail(id) {
     const meta = s.meta && typeof s.meta === 'object' ? s.meta : {};
     el.innerHTML = `
       <h2>${meta.pinned ? '📌 ' : ''}${esc(s.title || s.repo)}</h2>
-      <div>${chip(g.state)} ${s.kind ? `<span class="chip">${esc(s.kind)}</span>` : ''} ${s.legacy_radar_no ? `<span class="chip">radar #${s.legacy_radar_no}</span>` : ''}</div>
+      <div>${chip(g.state)} ${proofChip(g.proof)} ${s.kind ? `<span class="chip">${esc(s.kind)}</span>` : ''} ${s.legacy_radar_no ? `<span class="chip">radar #${s.legacy_radar_no}</span>` : ''}</div>
       <dl class="kv" style="margin-top:10px">
         ${s.url ? `<dt>Enlace</dt><dd><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></dd>` : ''}
         ${s.stars ? `<dt>Estrellas</dt><dd>${esc(s.stars)}</dd>` : ''}
@@ -181,6 +212,7 @@ async function openDetail(id) {
       ${g.deliveries.map((d) => `<div class="item"><div class="head">${appChip(d.target)}${chip(d.implementation)}<span class="chip">${esc(VERIF_LABEL[d.verification] || d.verification)}</span>
           <span class="meta">${esc(RELATION_LABEL[d.relation] || d.relation)}</span></div>
         <div class="prov">${d.repo ? esc(d.repo) + ' ' : ''}${d.commit_sha ? esc(d.commit_sha) : 'sin commit'}${d.agora_task ? ` · Ágora ${esc(d.agora_space)} #${d.agora_task}` : ''}</div>
+        ${ancestry(d)}
         ${d.declared?.what ? `<div class="body">${esc(d.declared.what)}</div>` : ''}</div>`).join('') || '<div class="empty">Nada entregado todavía.</div>'}
       <h4>Apariciones (${g.captures.length})</h4>
       ${g.captures.map((c) => `<div class="item"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
@@ -197,6 +229,32 @@ async function openDetail(id) {
     });
   } catch (e) { fail(e); el.innerHTML = '<div class="empty">No se pudo cargar.</div>'; }
 }
+
+function ancestry(d) {
+  const a = d.evidence?.commit_ancestry;
+  if (!a) return '';
+  const label = { integrated: `en ${esc(a.branch)} (${esc((a.commit || '').slice(0, 10))})`, not_in_main: `no está en ${esc(a.branch)}`, unknown: esc(({ repository_not_mapped: 'repositorio sin mapear', commit_not_found: 'commit no encontrado', invalid_commit_id: 'sin id de commit', main_branch_not_found: 'sin rama principal', repository_unavailable: 'repositorio no disponible' })[a.reason] || a.reason || 'sin comprobar') }[a.status];
+  return `<div class="hist">Comprobación de commit: ${label}</div>`;
+}
+
+// ------------------------------------------------------------------ inbox
+
+async function loadInbox() {
+  try {
+    const r = await api(`/api/inbox?channel=${encodeURIComponent($('in-channel').value)}&limit=200`);
+    $('in-count').textContent = `${r.total} capturas sin fuente`;
+    $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total;
+    $('inbox').innerHTML = r.items.map((c) => `<div class="card"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
+      <p>${esc(c.text || '(sin texto)')}</p>${c.attachment && c.attachment !== '""' ? `<div class="prov">adjunto: ${esc(c.attachment)}</div>` : ''}
+      <div class="inline-form"><input data-cap="${c.id}" placeholder="URL u owner/repo de esta captura"><button class="btn small" data-link="${c.id}">Convertir en descubrimiento</button></div></div>`).join('') || '<div class="empty">Nada pendiente.</div>';
+    $('inbox').querySelectorAll('[data-link]').forEach((b) => b.addEventListener('click', async () => {
+      const cap = r.items.find((c) => c.id === +b.dataset.link);
+      const ref = $('inbox').querySelector(`[data-cap="${b.dataset.link}"]`).value.trim();
+      try { await call('darwin_add', { text: ref ? `${ref}\n${cap.text || ''}` : (cap.text || ''), channel: 'manual', author: 'luis', note: `Desde la bandeja (${cap.channel})` }); toast('Convertido en descubrimiento.'); loadInbox(); } catch (e) { fail(e); }
+    }));
+  } catch (e) { fail(e); }
+}
+$('in-channel').addEventListener('change', loadInbox);
 
 // ------------------------------------------------------------------ tree
 
@@ -337,5 +395,7 @@ $('add-save').addEventListener('click', async (ev) => {
 // ------------------------------------------------------------------ start
 
 fillStaticFilters();
+loadWaSettings();
+api('/api/inbox?limit=1').then((r) => { $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total; }).catch(() => {});
 loadNames().catch(fail).finally(() => { show((location.hash || '#overview').slice(1)); updateBadge(); });
 if (!store('darwin.lastVisit')) store('darwin.lastVisit', String(Date.now() / 1000));

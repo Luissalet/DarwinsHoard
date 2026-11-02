@@ -19,11 +19,24 @@ from .tree import TreeBuilder
 log = logging.getLogger("darwin")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
+    "whatsapp_account": "luis",
+    "whatsapp_chat": "",            # exact JID of the «Gittrend» chat; empty = not synced
+    "whatsapp_sync_minutes": 0,      # 0 = only on demand
     "inspiration_dir": r"D:\LocalAI\inspiration",
     "radar_ideas": r"E:\Development\IA\Research\claude\radar-ideas.md",
     "faustus_url": "http://127.0.0.1:7000",
     "tree_refresh_minutes": 60,
 }
+
+
+#: Names the Ágora used before repositories were renamed or merged, mapped to today's name in the hub's inventory.
+REPO_ALIASES = {"hoardlink": "Hoard Hub", "fielddex": "Hoard Dex", "taloshoard": "Talos's Hoard", "bloodarrows": "Blood Arrows",
+                "writershoard": "Writers hoard desktop", "gamerhoard": "Gamer Hoard", "cookhoard": "Cook Hoard", "homehoard": "Home Hoard"}
+
+
+def _repo_norm(name: str) -> str:
+    import re as _re
+    return _re.sub(r"[^a-z0-9]", "", str(name).lower().replace("'s", ""))
 
 
 class Services:
@@ -39,6 +52,7 @@ class Services:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._tree_lock = threading.Lock()
+        self._sync_locks: dict[str, threading.Lock] = {}
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -57,6 +71,11 @@ class Services:
                 last = self.store.get_meta("tree_refreshed_at", 0) or 0
                 if time.time() - last > 60 * max(5, int(self.settings["tree_refresh_minutes"])):
                     self.refresh_tree()
+                every = int(self.settings.get("whatsapp_sync_minutes") or 0)
+                if every and self.settings.get("whatsapp_chat"):
+                    last_sync = self.store.get_meta("whatsapp_last_sync", 0) or 0
+                    if time.time() - last_sync > 60 * max(5, every):
+                        self.sync_whatsapp()
             except Exception:  # noqa: BLE001 - never kill the loop
                 log.exception("tree refresh")
             self._stop.wait(300)
@@ -75,6 +94,98 @@ class Services:
         return self.importer.import_all(inspiration_dir=Path(inspiration_dir or self.settings["inspiration_dir"]),
                                         radar_ideas=Path(radar_ideas or self.settings["radar_ideas"]),
                                         hub_url=self.config.hub_url, agora=agora)
+
+    # ------------------------------------------------------------------ ingestion (darwin_ingest, by Codex)
+
+    def repo_roots(self) -> dict[str, str]:
+        """Local repository of each delivery ``repo`` value: the hub's repository inventory (by name, with the old names
+        the Ágora still uses), the Ágora spaces' workspaces and Faustus. Keys are the exact ``repo`` values found."""
+        from .tree import _get
+        known: dict[str, str] = {"faustus": str(self.config.faustus_dir)}
+        try:
+            for rp in _get(f"{self.config.hub_url}/api/repos", timeout=30).get("repos", []):
+                if rp.get("name") and rp.get("path"):
+                    known[_repo_norm(rp["name"])] = rp["path"]
+        except Exception:  # noqa: BLE001
+            log.info("hub repos not available")
+        for old, new in REPO_ALIASES.items():
+            if _repo_norm(new) in known:
+                known.setdefault(old, known[_repo_norm(new)])
+        roots = {"Faustus": str(self.config.faustus_dir), "faustus": str(self.config.faustus_dir)}
+        for row in self.store.q("SELECT DISTINCT repo FROM deliveries WHERE repo IS NOT NULL"):
+            path = known.get(_repo_norm(row["repo"]))
+            if path:
+                roots[row["repo"]] = path
+        try:
+            for sp in _get(f"{self.config.hub_url}/api/agora/spaces").get("spaces", []):
+                if sp.get("workspace"):
+                    roots.setdefault(sp["id"], sp["workspace"])
+        except Exception:  # noqa: BLE001 - the hub may be down; Faustus alone still works
+            log.info("hub not answering: verifying only Faustus deliveries")
+        # Only folders that are a repository themselves: a workspace like D:\LocalAI is not, and git would walk the
+        # whole tree on every call. A delivery whose repo is not here is reported as «repository_not_mapped».
+        return {k: v for k, v in roots.items() if (Path(v) / ".git").exists()}
+
+    def verify_deliveries(self) -> dict[str, Any]:
+        from darwin_ingest import verify_deliveries
+        result = verify_deliveries(self.store, self.repo_roots())
+        summary: dict[str, int] = {}
+        for r in result["deliveries"]:
+            k = r["status"] if r["status"] != "unknown" else f"unknown:{r.get('reason', '')}"
+            summary[k] = summary.get(k, 0) + 1
+        self.store.set_meta("deliveries_verified_at", time.time())
+        return {"summary": summary, "checked": len(result["deliveries"]), "verified_at": time.time()}
+
+    def _faustus_get(self, path: str, params: dict[str, Any]) -> Any:
+        import json as _json
+        import urllib.parse
+        import urllib.request
+        url = f"{self.settings['faustus_url'].rstrip('/')}{path}?{urllib.parse.urlencode(params)}"
+        try:
+            with urllib.request.urlopen(url, timeout=30) as r:
+                return _json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
+            body = exc.read().decode("utf-8", "replace")[:300]
+            raise RuntimeError(f"Faustus answered {exc.code}: {body}") from exc
+
+    def whatsapp_chats(self, query: str = "") -> list[dict[str, Any]]:
+        data = self._faustus_get("/api/whatsapp/chats", {"limit": 200})
+        chats = data.get("chats", data) if isinstance(data, dict) else data
+        q = query.lower().strip()
+        return [c for c in chats if not q or q in str(c.get("name") or c.get("chat_name") or "").lower() or q in str(c.get("jid") or c.get("id") or "")]
+
+    def sync_whatsapp(self, *, chat: str = "", account: str = "", max_pages: int = 50) -> dict[str, Any]:
+        """Read the chosen chat page by page through Faustus's bridge (read only). One sync per account/chat at a time."""
+        from darwin_ingest import sync_whatsapp_page
+        chat = chat or self.settings.get("whatsapp_chat") or ""
+        account = account or self.settings.get("whatsapp_account") or "luis"
+        if "@" not in chat:
+            raise ValueError("Choose the chat first (its exact JID, e.g. 1203…@g.us): darwin_whatsapp_chats lists them.")
+        lock = self._sync_locks.setdefault(f"{account}|{chat}", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"busy": True, "chat": chat}
+        try:
+            def client(*, chat: str, cursor: str, limit: int) -> dict[str, Any]:
+                return self._faustus_get("/api/whatsapp/message-page", {"chat": chat, "cursor": cursor, "limit": limit})
+            totals = {"created": 0, "existing": 0, "sources": set(), "pages": 0}
+            last: dict[str, Any] = {}
+            for _ in range(max(1, max_pages)):
+                last = sync_whatsapp_page(self.store, client, account=account, chat=chat)
+                totals["created"] += last["created"]
+                totals["existing"] += last["existing"]
+                totals["sources"].update(last["sources"])
+                totals["pages"] += 1
+                if last["pass_complete"]:
+                    break
+            self.store.set_meta("whatsapp_last_sync", time.time())
+            return {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
+                    "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
+        finally:
+            lock.release()
+
+    def ingest(self, records: list[dict[str, Any]], channel: str) -> dict[str, Any]:
+        from darwin_ingest import ingest_batch
+        return ingest_batch(self.store, records, channel=channel)
 
     def update_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
         for key, value in changes.items():

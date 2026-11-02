@@ -15,6 +15,7 @@
     <nav class="tabs" id="tabs">
       <button class="tab" data-view="overview">Resumen</button>
       <button class="tab" data-view="history">Historial</button>
+      <button class="tab" data-view="inbox">Bandeja <span class="badge" id="inbox-badge" hidden></span></button>
       <button class="tab" data-view="tree">Árbol</button>
       <button class="tab" data-view="changes">Novedades <span class="badge" id="changes-badge" hidden></span></button>
       <button class="tab" data-view="gaps">Carencias</button>
@@ -35,9 +36,14 @@
         <div class="card"><h3>De dónde llegan</h3><div id="ov-channels" class="bars"></div></div>
         <div class="card"><h3>Entregas</h3><div id="ov-deliveries" class="bars"></div><p class="hint">«Integrada» es lo que dicen el seguimiento o el Ágora; «documentada» indica que aún no se ha comprobado contra la rama principal.</p></div>
       </div>
+      <div class="card" id="wa-card">
+        <div class="card-head"><h3>Gittrend (WhatsApp)</h3>
+          <div class="actions"><select id="wa-chat" aria-label="Chat"><option value="">Elige el chat…</option></select><button class="btn" id="wa-find">Buscar chats</button><button class="btn primary" id="wa-sync">Sincronizar</button></div></div>
+        <p class="hint" id="wa-status">Lee el chat a través del puente de WhatsApp de Faustus, sin enviar nada ni marcar como leído. Lo ya guardado no se repite.</p>
+      </div>
       <div class="card">
         <div class="card-head"><h3>Importaciones</h3>
-          <div class="actions"><button class="btn" id="btn-import">Importar histórico</button><button class="btn" id="btn-tree-refresh">Refrescar árbol</button></div></div>
+          <div class="actions"><button class="btn" id="btn-import">Importar histórico</button><button class="btn" id="btn-verify">Comprobar entregas</button><button class="btn" id="btn-tree-refresh">Refrescar árbol</button></div></div>
         <div id="ov-imports" class="table-wrap"></div>
         <p class="hint" id="ov-missing"></p>
       </div>
@@ -68,6 +74,13 @@
         </div>
         <aside class="detail" id="detail"><div class="empty">Elige un descubrimiento para ver de dónde vino, qué se propuso, qué se entregó y su historia.</div></aside>
       </div>
+    </section>
+
+    <!-- Bandeja -->
+    <section class="view" id="view-inbox">
+      <div class="filters"><select id="in-channel" aria-label="Origen"><option value="">Cualquier origen</option></select><span class="spacer"></span><span class="meta" id="in-count"></span></div>
+      <p class="hint" style="margin:0 0 10px">Capturas que aún no tienen un repo o enlace reconocido (una nota del chat, una captura sin URL). Se guardan siempre; desde aquí puedes convertirlas en descubrimiento.</p>
+      <div id="inbox"></div>
     </section>
 
     <!-- Árbol -->

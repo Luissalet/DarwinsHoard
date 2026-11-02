@@ -19,7 +19,7 @@ dev = ["pytest>=8", "pillow>=10"]
 darwins-hoard = "darwin_hoard.__main__:main"
 
 [tool.setuptools.packages.find]
-include = ["darwin_hoard*"]
+include = ["darwin_hoard*", "darwin_ingest*"]
 
 [tool.setuptools.package-data]
 darwin_hoard = ["static/**/*"]

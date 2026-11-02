@@ -114,3 +114,39 @@ def test_two_radar_entries_on_one_source_both_count(tmp_path):
     assert rep["radar_numbers"]["missing"] == [] and rep["radar_numbers"]["distinct"] == 2
     assert query.find(store, query="#2")["total"] == 1
     store.close()
+
+
+def test_aggregate_mixed_and_proof(tmp_path):
+    import subprocess
+    store = Store(tmp_path / "d.db")
+    sid = store.upsert_source(repo="a/b")
+    store.upsert_proposal(key="a->x", source_id=sid, target="x", state="aceptada", origin="agora")
+    store.upsert_proposal(key="a->y", source_id=sid, target="y", state="aceptada", origin="agora")
+    repo = tmp_path / "r"
+    repo.mkdir()
+    git = lambda *a: subprocess.run(["git", "-C", str(repo), *a], capture_output=True, text=True, check=True).stdout.strip()
+    git("init", "-q", "-b", "main")
+    (repo / "f").write_text("1")
+    git("add", "f")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "c")
+    sha = git("rev-parse", "HEAD")
+    store.upsert_delivery(key="d1", source_id=sid, target="x", repo="R", commit_sha=sha[:8], implementation="integrada", verification="documentada")
+    g = query.genealogy(store, source_id=sid)
+    assert g["state"] == "mixta" and g["proof"] == "documentos"
+    from darwin_ingest import verify_deliveries
+    verify_deliveries(store, {"R": str(repo)})
+    g = query.genealogy(store, source_id=sid)
+    assert g["proof"] == "en_main"
+    store.upsert_proposal(key="a->y", source_id=sid, target="y", state="descartada", origin="luis")
+    assert query.genealogy(store, source_id=sid)["state"] == "integrada"
+    store.close()
+
+
+def test_inbox_keeps_captures_without_source(tmp_path):
+    store = Store(tmp_path / "d.db")
+    from darwin_ingest import ingest_batch
+    ingest_batch(store, [{"capture_key": "w:1", "text": "mira esto luego"}, {"capture_key": "w:2", "text": "https://github.com/a/b"}], channel="whatsapp")
+    box = query.inbox(store)
+    assert box["total"] == 1 and box["items"][0]["text"] == "mira esto luego"
+    assert query.find(store, channel="whatsapp")["total"] == 1
+    store.close()

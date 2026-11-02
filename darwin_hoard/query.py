@@ -19,21 +19,47 @@ ORDERS = {
 
 #: Aggregated state of a source, computed from its proposals and deliveries, most advanced first. Shown as such
 #: ("agregado"), never stored: the axes stay separate underneath.
-AGGREGATE_ORDER = ["integrada", "parcial", "aceptada", "investigando", "debatida", "pendiente", "aplazada", "cubierta", "descartada", "sin_propuesta"]
+AGGREGATE_ORDER = ["integrada", "mixta", "parcial", "aceptada", "investigando", "debatida", "pendiente", "aplazada", "cubierta", "descartada", "sin_propuesta"]
 
 
-def _aggregate(proposals: list[dict[str, Any]], implementations: list[str]) -> str:
-    """A proposal without a target (a radar line that named no app) only counts while no app-specific decision exists."""
+def _aggregate(proposals: list[dict[str, Any]], deliveries: list[Any]) -> str:
+    """Aggregate state of a source, for display only.
+
+    * A proposal without a target (a radar line that named no app) only counts while no app-specific one exists.
+    * ``integrada`` only when every app it is still meant for (not discarded or covered) has an integrated delivery;
+      ``mixta`` when some do and others do not, so one delivery never makes the whole source look done."""
+    dels = [d if isinstance(d, dict) else {"implementation": d, "target": None} for d in deliveries]
     targeted = [p for p in proposals if p.get("target")]
     proposal_states = [p["state"] for p in (targeted or proposals)]
-    if "integrada" in implementations:
-        return "integrada"
-    if "parcial" in implementations:
+    done_targets = {d.get("target") for d in dels if d.get("implementation") == "integrada"}
+    if done_targets:
+        open_targets = {p["target"] for p in targeted if p["state"] not in ("descartada", "cubierta")}
+        return "mixta" if open_targets - done_targets else "integrada"
+    if any(d.get("implementation") == "parcial" for d in dels):
         return "parcial"
-    for state in AGGREGATE_ORDER[2:-1]:
+    for state in AGGREGATE_ORDER[3:-1]:
         if state in proposal_states:
             return state
     return "sin_propuesta"
+
+
+def proof_of(deliveries: list[dict[str, Any]]) -> str:
+    """How an «integrada» is backed: ``en_main`` (a commit proven in the main branch), ``documentos`` (only declared),
+    ``fuera_de_main`` (the declared commit is missing or not in main) or ``""`` when nothing is integrated."""
+    states = []
+    for d in deliveries:
+        if d.get("implementation") != "integrada":
+            continue
+        ev = d.get("evidence") if isinstance(d.get("evidence"), dict) else {}
+        states.append(((ev or {}).get("commit_ancestry") or {}).get("status") or "")
+    if not states:
+        return ""
+    if "integrated" in states:
+        return "en_main"
+    if any(s in ("not_in_main",) for s in states) or any(
+            ((d.get("evidence") or {}).get("commit_ancestry") or {}).get("reason") == "commit_not_found" for d in deliveries if isinstance(d.get("evidence"), dict)):
+        return "fuera_de_main"
+    return "documentos"
 
 
 def find(store: Store, *, query: str = "", state: str = "", target: str = "", channel: str = "", kind: str = "",
@@ -57,14 +83,16 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
             for word in q.lower().split()[:8]:
                 like = f"%{word}%"
                 where.append("(LOWER(COALESCE(s.title,'')) LIKE ? OR LOWER(COALESCE(s.repo,'')) LIKE ? OR LOWER(COALESCE(s.summary,'')) LIKE ? "
-                             "OR s.id IN (SELECT source_id FROM captures WHERE LOWER(text) LIKE ?))")
-                args += [like, like, like, like]
+                             "OR s.id IN (SELECT source_id FROM captures WHERE LOWER(text) LIKE ?) "
+                             "OR s.id IN (SELECT cs.source_id FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE LOWER(c.text) LIKE ?))")
+                args += [like, like, like, like, like]
     if target:
         where.append("(s.id IN (SELECT source_id FROM proposals WHERE target=?) OR s.id IN (SELECT source_id FROM deliveries WHERE target=?))")
         args += [target, target]
     if channel:
-        where.append("s.id IN (SELECT source_id FROM captures WHERE channel=?)")
-        args.append(channel)
+        where.append("(s.id IN (SELECT source_id FROM captures WHERE channel=?) OR "
+                     "s.id IN (SELECT cs.source_id FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE c.channel=?))")
+        args += [channel, channel]
     if kind:
         where.append("s.kind=?")
         args.append(kind)
@@ -79,11 +107,11 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
     rows = store.q(f"SELECT s.* FROM sources s WHERE {' AND '.join(where)} ORDER BY {ORDERS.get(order, ORDERS['recent'])}", args)
     ids = [r["id"] for r in rows]
     props = _by_source(store, "SELECT source_id, id, target, state, reason, origin, agora_space, agora_task FROM proposals", ids)
-    dels = _by_source(store, "SELECT source_id, id, target, implementation, verification, commit_sha, relation FROM deliveries", ids)
+    dels = _by_source(store, "SELECT source_id, id, target, implementation, verification, commit_sha, relation, evidence FROM deliveries", ids)
     items = []
     for r in rows:
         p, d = props.get(r["id"], []), dels.get(r["id"], [])
-        agg = _aggregate(p, [x["implementation"] for x in d])
+        agg = _aggregate(p, d)
         if state and state != agg and state not in {x["state"] for x in p} and state not in {x["implementation"] for x in d}:
             continue
         items.append(_summary(r, p, d, agg))
@@ -104,7 +132,10 @@ def _by_source(store: Store, sql: str, ids: list[int]) -> dict[int, list[dict[st
 
 def _summary(r: dict[str, Any], props: list[dict[str, Any]], dels: list[dict[str, Any]], agg: str) -> dict[str, Any]:
     targets = sorted({x["target"] for x in props + dels if x.get("target")})
-    return {"id": r["id"], "key": r["key"], "kind": r["kind"], "title": r["title"], "url": r["url"], "repo": r["repo"],
+    proof = proof_of(dels)
+    for x in dels:
+        x.pop("evidence", None)
+    return {"proof": proof, "id": r["id"], "key": r["key"], "kind": r["kind"], "title": r["title"], "url": r["url"], "repo": r["repo"],
             "radar_no": r["legacy_radar_no"], "stars": r["stars"], "summary": (r["summary"] or "")[:280],
             "pinned": bool((r.get("meta") or {}).get("pinned")) if isinstance(r.get("meta"), dict) else False,
             "first_seen": r["first_seen"], "last_seen": r["last_seen"], "captures": r["captures"], "state": agg,
@@ -134,8 +165,8 @@ def genealogy(store: Store, *, source_id: Optional[int] = None, key: str = "", r
                    "ORDER BY c.at", (sid, sid))
     aliases = [r["alias"] for r in store.q("SELECT alias FROM source_aliases WHERE source_id=?", (sid,))]
     ideas = store.q("SELECT * FROM ideas WHERE source_id=?", (sid,))
-    agg = _aggregate(props, [d["implementation"] for d in dels])
-    return {"source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props, "deliveries": dels}
+    agg = _aggregate(props, dels)
+    return {"proof": proof_of(dels), "source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props, "deliveries": dels}
 
 
 def overview(store: Store) -> dict[str, Any]:
@@ -155,9 +186,9 @@ def overview(store: Store) -> dict[str, Any]:
     agg: dict[str, int] = {}
     ids = [r["id"] for r in store.q("SELECT id FROM sources")]
     props = _by_source(store, "SELECT source_id, target, state FROM proposals", ids)
-    dels = _by_source(store, "SELECT source_id, implementation FROM deliveries", ids)
+    dels = _by_source(store, "SELECT source_id, target, implementation FROM deliveries", ids)
     for sid in ids:
-        a = _aggregate(props.get(sid, []), [d["implementation"] for d in dels.get(sid, [])])
+        a = _aggregate(props.get(sid, []), dels.get(sid, []))
         agg[a] = agg.get(a, 0) + 1
     return {"counts": counts, "sources_by_state": agg, "proposals_untargeted": untargeted,
             "radar_missing": store.get_meta("radar_missing", []), "proposals_by_state": by_state, "deliveries_by_implementation": by_impl,
@@ -174,3 +205,15 @@ def changes_since(store: Store, since: float, limit: int = 200) -> dict[str, Any
         "state_changes": store.q("SELECT * FROM history WHERE at>=? ORDER BY at DESC LIMIT ?", (since, limit)),
         "new_deliveries": store.q("SELECT id, source_id, target, commit_sha, implementation, verification, created FROM deliveries WHERE created>=? ORDER BY created DESC LIMIT ?", (since, limit)),
     }
+
+
+def inbox(store: Store, *, channel: str = "", limit: int = 100, offset: int = 0) -> dict[str, Any]:
+    """Captures that no source is linked to yet: a chat note, a screenshot without a URL. Kept, never dropped."""
+    where, args = ["c.source_id IS NULL", "NOT EXISTS (SELECT 1 FROM capture_sources cs WHERE cs.capture_id=c.id)"], []
+    if channel:
+        where.append("c.channel=?")
+        args.append(channel)
+    sql = f"FROM captures c WHERE {' AND '.join(where)}"
+    total = store.one(f"SELECT COUNT(*) AS n {sql}", args)["n"]
+    rows = store.q(f"SELECT c.* {sql} ORDER BY c.at DESC LIMIT ? OFFSET ?", [*args, limit, offset])
+    return {"total": total, "items": rows}

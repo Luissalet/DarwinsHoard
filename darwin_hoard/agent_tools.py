@@ -99,6 +99,27 @@ class ImportArgs(BaseModel):
     agora: bool = True
 
 
+class InboxArgs(BaseModel):
+    channel: str = Field("", max_length=30)
+    limit: int = Field(100, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
+class ChatsArgs(BaseModel):
+    query: str = Field("", max_length=100, description="Part of the chat name, e.g. Gittrend.")
+
+
+class SyncArgs(BaseModel):
+    chat: str = Field("", max_length=200, description="Exact JID; empty = the chat chosen in settings.")
+    max_pages: int = Field(50, ge=1, le=500)
+
+
+class IngestArgs(BaseModel):
+    channel: Literal["links", "talos", "whatsapp", "manual", "agent"] = "agent"
+    records: list[dict[str, Any]] = Field(..., min_length=1, max_length=2000,
+                                          description="Each with a stable capture_key and text/url/at/author/chat/attachment/provenance.")
+
+
 class SinceArgs(BaseModel):
     since: Optional[float] = Field(None, description="Epoch seconds; default: 7 days ago.")
     limit: int = Field(200, ge=1, le=1000)
@@ -217,6 +238,19 @@ TOOLS: list[Tool] = [
     Tool("darwin_changes_since", _d("What changed since a moment: new discoveries and captures, state changes, deliveries.",
                                     synonyms="qué hay de nuevo, desde la última vez"), SinceArgs, ann(read_only=True),
          lambda s, a: query.changes_since(s.store, a.since if a.since is not None else time.time() - 7 * 86400, a.limit)),
+    Tool("darwin_inbox", _d("Captures not linked to any discovery yet (a chat note, a screenshot without a URL): kept to be enriched.",
+                             synonyms="bandeja, sin clasificar"), InboxArgs, ann(read_only=True),
+         lambda s, a: query.inbox(s.store, channel=a.channel, limit=a.limit, offset=a.offset)),
+    Tool("darwin_ingest", _d("Store captures from another app (Links, Talos OCR, a chat) idempotently by capture_key and link their URLs/repos."),
+         IngestArgs, ann(idempotent=True), lambda s, a: s.ingest(a.records, a.channel)),
+    Tool("darwin_verify_deliveries", _d("Check every delivery's commit against the main branch of its local repository (no fetch, no checkout).",
+                                        "A commit in main is code evidence, not a functional test."),
+         Empty, ann(idempotent=True), lambda s, a: s.verify_deliveries(), timeout_s=600),
+    Tool("darwin_whatsapp_chats", _d("WhatsApp chats Faustus's bridge knows (to pick the Gittrend chat's exact JID)."),
+         ChatsArgs, ann(read_only=True), lambda s, a: {"chats": s.whatsapp_chats(a.query)}),
+    Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
+                                    "Read only: it never sends or marks anything as read.", "gittrend, sincronizar whatsapp"),
+         SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages), timeout_s=600),
     Tool("darwin_import_legacy", _d("Import (idempotently) the radar Markdown files, the tracker, the guide and the Ágora tasks that cite the radar."),
          ImportArgs, ann(idempotent=True), lambda s, a: s.import_legacy(**a.model_dump()), timeout_s=300),
 ]

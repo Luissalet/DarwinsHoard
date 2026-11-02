@@ -69,6 +69,16 @@ def changes(request: Request, since: Optional[float] = None):
     return query.changes_since(services(request).store, since if since is not None else time.time() - 7 * 86400)
 
 
+@router.get("/api/inbox")
+def inbox(request: Request, channel: str = "", limit: int = 100, offset: int = 0):
+    return query.inbox(services(request).store, channel=channel, limit=max(1, min(limit, 500)), offset=max(0, offset))
+
+
+@router.post("/api/deliveries/verify")
+def deliveries_verify(request: Request):
+    return services(request).verify_deliveries()
+
+
 @router.get("/api/settings")
 def settings_get(request: Request):
     return services(request).settings
