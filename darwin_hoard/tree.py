@@ -33,13 +33,16 @@ ALIASES = {
     "voz": "voice speech tts audio", "imagen": "image photo", "foto": "photo image", "fotos": "photo image", "video": "video",
     "diseno": "design", "documento": "document paperwork pdf", "documentos": "document paperwork pdf", "3d": "3d mesh stl model",
     "agenda": "agenda calendar deadline reminder", "dinero": "finance budget accounts ledger", "cocina": "recipe cooking pantry",
-    "pantalla": "screen screenshot", "capturas": "screenshot screen", "portapapeles": "clipboard", "codigo": "code api",
+    "pantalla": "screen screenshot", "capturas": "screenshot screen", "portapapeles": "clipboard", "codigo": "code coding api",
     "estudio": "study quiz exam", "contactos": "people contacts", "correo": "mail email", "envios": "shipment parcel",
     "precios": "price", "busqueda": "search", "buscar": "search", "reunion": "meeting minutes", "reuniones": "meeting minutes",
     "traducir": "translate", "modelos": "model", "juego": "game", "juegos": "game games", "mapa": "map terrain", "mapas": "map terrain",
     "musica": "music", "libros": "library books", "ocr": "ocr", "transcripcion": "transcription speech",
     "transcribir": "transcription speech", "grabar": "recording", "audio": "audio sound", "resumen": "summary digest",
     "repos": "repository git", "git": "git repository commits", "agentes": "agent agents", "navegador": "browser",
+    "agente": "agent", "programar": "coding code", "programacion": "coding code", "memoria": "memory", "escribir": "writing",
+    "escritura": "writing", "presentaciones": "slides presentation", "diapositivas": "slides", "datos": "data", "tablas": "table data",
+    "graficos": "chart", "voces": "voice tts", "imagenes": "image", "modelo": "model", "local": "local", "web": "web",
 }
 
 
