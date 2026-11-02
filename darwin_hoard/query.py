@@ -15,6 +15,7 @@ ORDERS = {
     "radar_desc": "COALESCE(s.legacy_radar_no, -1) DESC, s.id DESC",
     "captures": "s.captures DESC, s.last_seen DESC",
     "title": "LOWER(s.title) ASC",
+    "fitness": "s.last_seen DESC",  # re-sorted by score below
 }
 
 #: Aggregated state of a source, computed from its proposals and deliveries, most advanced first. Shown as such
@@ -64,7 +65,7 @@ def proof_of(deliveries: list[dict[str, Any]]) -> str:
 
 def find(store: Store, *, query: str = "", state: str = "", target: str = "", channel: str = "", kind: str = "",
          pinned: Optional[bool] = None, radar_from: Optional[int] = None, radar_to: Optional[int] = None,
-         order: str = "recent", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+         order: str = "recent", limit: int = 50, offset: int = 0, with_fitness: bool = False) -> dict[str, Any]:
     """Sources with their proposals summarised. ``state`` filters on the aggregate or on any proposal state;
     ``target`` on any proposal or delivery target; ``channel`` on any capture channel."""
     where, args = ["1=1"], []
@@ -115,6 +116,16 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
         if state and state != agg and state not in {x["state"] for x in p} and state not in {x["implementation"] for x in d}:
             continue
         items.append(_summary(r, p, d, agg))
+    if order == "fitness" or with_fitness:
+        from . import fitness as fit
+        gaps = fit.gap_terms(store)
+        texts = fit.texts_by_source(store, [i["id"] for i in items])
+        by_id = {r["id"]: r for r in rows}
+        for it in items:
+            f = fit.score(by_id[it["id"]], it["state"], text=texts.get(it["id"], ""), gaps=gaps)
+            it["fitness"], it["fitness_reasons"] = f["score"], f["reasons"]
+        if order == "fitness":
+            items.sort(key=lambda i: -i["fitness"])
     total = len(items)
     return {"total": total, "offset": offset, "limit": limit, "items": items[offset:offset + limit]}
 
@@ -166,7 +177,10 @@ def genealogy(store: Store, *, source_id: Optional[int] = None, key: str = "", r
     aliases = [r["alias"] for r in store.q("SELECT alias FROM source_aliases WHERE source_id=?", (sid,))]
     ideas = store.q("SELECT * FROM ideas WHERE source_id=?", (sid,))
     agg = _aggregate(props, dels)
-    return {"proof": proof_of(dels), "source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props, "deliveries": dels}
+    from . import fitness as fit
+    fitness = fit.score(src, agg, text=fit.texts_by_source(store, [sid]).get(sid, ""), gaps=fit.gap_terms(store))
+    return {"proof": proof_of(dels), "source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props,
+            "deliveries": dels, "fitness": fitness}
 
 
 def overview(store: Store) -> dict[str, Any]:
