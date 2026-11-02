@@ -74,6 +74,29 @@ def inbox(request: Request, channel: str = "", limit: int = 100, offset: int = 0
     return query.inbox(services(request).store, channel=channel, limit=max(1, min(limit, 500)), offset=max(0, offset))
 
 
+@router.get("/api/inbox/ocr")
+def inbox_ocr_status(request: Request):
+    return services(request).ocr_job
+
+
+@router.post("/api/inbox/ocr")
+def inbox_ocr_start(request: Request, limit: int = 60):
+    return services(request).start_ocr(limit=max(1, min(limit, 500)))
+
+
+@router.get("/api/captures/{capture_id}/media")
+def capture_media(request: Request, capture_id: int):
+    """The image a capture refers to, from Faustus's WhatsApp media folder (read only, never outside it)."""
+    from fastapi.responses import FileResponse
+    from ..ocr import media_path
+    svc = services(request)
+    row = svc.store.one("SELECT attachment FROM captures WHERE id=?", (capture_id,))
+    path = media_path(svc.media_dir, (row or {}).get("attachment") or "") if row else None
+    if path is None:
+        raise DarwinError("not_found", "This capture has no image on disk.")
+    return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
+
+
 @router.post("/api/deliveries/verify")
 def deliveries_verify(request: Request):
     return services(request).verify_deliveries()

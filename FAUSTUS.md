@@ -18,6 +18,7 @@
 | Bulk ingestion from another app | `darwin_ingest` |
 | Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch), `darwin_tree_refresh` |
 | WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor) |
+| Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
 
 ## Rules

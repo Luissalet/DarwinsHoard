@@ -109,6 +109,10 @@ class ChatsArgs(BaseModel):
     query: str = Field("", max_length=100, description="Part of the chat name, e.g. Gittrend.")
 
 
+class OcrArgs(BaseModel):
+    limit: int = Field(60, ge=1, le=500, description="How many unread screenshots to read in this call.")
+
+
 class SyncArgs(BaseModel):
     chat: str = Field("", max_length=200, description="Exact JID; empty = the chat chosen in settings.")
     max_pages: int = Field(50, ge=1, le=500)
@@ -251,6 +255,10 @@ TOOLS: list[Tool] = [
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
                                     "Read only: it never sends or marks anything as read.", "gittrend, sincronizar whatsapp"),
          SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages), timeout_s=600),
+    Tool("darwin_read_screenshots", _d("Read the unread screenshots in the inbox with the family's OCR and link the repositories and links they show.",
+                                       "URLs are taken as read; bare owner/name only when GitHub confirms the repository. An image is read once.",
+                                       "ocr, capturas, fotos, pantallazos"),
+         OcrArgs, ann(idempotent=True), lambda s, a: s.ocr_inbox(limit=a.limit), timeout_s=900),
     Tool("darwin_import_legacy", _d("Import (idempotently) the radar Markdown files, the tracker, the guide and the Ágora tasks that cite the radar."),
          ImportArgs, ann(idempotent=True), lambda s, a: s.import_legacy(**a.model_dump()), timeout_s=300),
 ]

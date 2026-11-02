@@ -106,3 +106,12 @@ ul.tree ul { padding-left: 18px; border-left: 1px dashed var(--hoard-border); ma
 .toast.err { border-left-color: var(--hoard-danger); }
 .table-wrap table { width: 100%; border-collapse: collapse; font-size: 12.5px; } .table-wrap td, .table-wrap th { padding: 5px 8px; border-bottom: 1px solid var(--hoard-border); text-align: left; }
 @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } .detail { position: static; max-height: none; } .quick-add { display: none; } }
+
+/* Inbox: screenshots from the chat and what the OCR read in them. */
+.inbox-card .thumb { display: block; max-inline-size: 100%; max-block-size: 260px; margin: 6px 0; border-radius: var(--hoard-radius-sm, 6px);
+  border: 1px solid var(--hoard-border); object-fit: contain; background: var(--hoard-sunken); }
+.inbox-card details.ocr { margin: 6px 0; font-size: 12px; color: var(--hoard-text-muted); }
+.inbox-card details.ocr summary { cursor: pointer; }
+.inbox-card details.ocr pre { white-space: pre-wrap; max-block-size: 220px; overflow: auto; margin: 6px 0 0; padding: 8px;
+  background: var(--hoard-sunken); border-radius: var(--hoard-radius-sm, 6px); font: 12px/1.4 var(--hoard-font-mono, monospace); }
+#in-ocr-status { margin-inline-start: 8px; }
