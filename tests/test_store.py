@@ -70,3 +70,25 @@ def test_state_changes_keep_history(store):
     assert [(h["old"], h["new"]) for h in hist] == [("pendiente", "aceptada")]
     with pytest.raises(ValueError):
         store.set_state("proposals", pid, "state", "hecho")
+
+
+def test_social_links_drop_share_parameters_and_old_keys_merge(tmp_path):
+    from darwin_hoard.canon import canonical_url
+    from darwin_hoard.store import Store
+    assert canonical_url("https://x.com/tom_doerr/status/2115405924646985924?a=mM_LjFRDSf") == "https://x.com/tom_doerr/status/2115405924646985924"
+    assert canonical_url("https://twitter.com/tom_doerr/status/1?s=20&t=abc") == "https://x.com/tom_doerr/status/1"
+    assert canonical_url("https://www.youtube.com/watch?v=abc&si=x") == "https://youtube.com/watch?v=abc"
+    store = Store(tmp_path / "d.db")
+    with store.tx() as c:  # two sources keyed before the rule existed
+        for key in ("url:https://x.com/u/status/9?a=one", "url:https://x.com/u/status/9?a=two"):
+            c.execute("INSERT INTO sources(key, kind, url, title, first_seen, last_seen, created, updated) VALUES (?,?,?,?,?,?,?,?)",
+                      (key, "article", key[4:], key, 1, 2, 1, 1))
+    first = store.one("SELECT id FROM sources WHERE key=?", ("url:https://x.com/u/status/9?a=one",))["id"]
+    cid, _ = store.add_capture(capture_key="k1", channel="whatsapp", text="t")
+    store.link_capture(cid, first)
+    assert store.recanonicalize() == {"renamed": 1, "merged": 1}
+    rows = store.q("SELECT id, key FROM sources")
+    assert [r["key"] for r in rows] == ["url:https://x.com/u/status/9"]
+    assert store.source_by_key("url:https://x.com/u/status/9?a=two")["id"] == rows[0]["id"]
+    assert store.q("SELECT source_id FROM capture_sources")[0]["source_id"] == rows[0]["id"]
+    assert store.recanonicalize() == {"renamed": 0, "merged": 0}

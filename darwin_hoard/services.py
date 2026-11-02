@@ -45,9 +45,11 @@ class Services:
         config.paths.ensure()
         self.token = read_or_create_token(config.token_path)
         self.store = Store(config.db_path)
+        self.store.recanonicalize()  # cheap; keeps old sources in step with canonical_url changes
         self.settings_path = config.data_dir / "settings.json"
         self.settings = {**DEFAULT_SETTINGS, **(read_json(self.settings_path, default={}) or {})}
         self.importer = LegacyImporter(self.store)
+        self.ocr_job: dict[str, Any] = {"running": False}
         self.started = time.time()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -178,10 +180,56 @@ class Services:
                 if last["pass_complete"]:
                     break
             self.store.set_meta("whatsapp_last_sync", time.time())
+            if totals["created"]:
+                self.start_ocr()  # new screenshots: read them in the background
             return {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
                     "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
         finally:
             lock.release()
+
+    # ------------------------------------------------------------------ screenshots (OCR)
+
+    @property
+    def media_dir(self) -> Path:
+        return Path(self.config.faustus_dir) / "data" / "whatsapp" / "media"
+
+    def ocr_inbox(self, *, limit: int = 60) -> dict[str, Any]:
+        """Read the unread screenshots of the inbox with the family's OCR and link what they show (see :mod:`ocr`)."""
+        from . import ocr
+        from .hoard_link import fam_docs
+        lock = self._sync_locks.setdefault("ocr", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"busy": True, **self.ocr_job}
+        try:
+            self.ocr_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+
+            def progress(done: int, total: int) -> None:
+                self.ocr_job.update(done=done, total=total)
+
+            result = ocr.read_inbox(self.store, self.media_dir, lambda path: fam_docs.ocr_image(path, lang="en", timeout_s=180),
+                                    limit=limit, on_progress=progress)
+            self.ocr_job = {"running": False, "finished": time.time(), **result}
+            return result
+        except Exception as exc:  # noqa: BLE001 - surfaced to the page, never kills the app
+            self.ocr_job = {"running": False, "finished": time.time(), "error": str(exc)}
+            raise
+        finally:
+            lock.release()
+
+    def start_ocr(self, *, limit: int = 60) -> dict[str, Any]:
+        """The same in the background (the page polls ``ocr_job``)."""
+        if self.ocr_job.get("running"):
+            return dict(self.ocr_job)
+        self.ocr_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+        threading.Thread(target=lambda: self._safe(self.ocr_inbox, limit=limit), name="darwin-ocr", daemon=True).start()
+        return dict(self.ocr_job)
+
+    @staticmethod
+    def _safe(fn, **kwargs) -> None:
+        try:
+            fn(**kwargs)
+        except Exception:  # noqa: BLE001 - recorded in ocr_job
+            pass
 
     def ingest(self, records: list[dict[str, Any]], channel: str) -> dict[str, Any]:
         from darwin_ingest import ingest_batch

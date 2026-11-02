@@ -16,6 +16,11 @@ TRACKING_KEYS = {"fbclid", "gclid", "dclid", "msclkid", "igsh", "igshid", "si", 
 KEEP_KEYS = {"v", "list", "id", "p", "q"}  # content parameters that must survive (YouTube v, forum ids...)
 
 GITHUB_HOSTS = {"github.com", "www.github.com"}
+# Social posts carry only share/tracking parameters (x.com adds ?a=… per share): the path is the identity.
+SOCIAL_HOSTS = {"x.com", "twitter.com", "mobile.twitter.com", "mobile.x.com", "instagram.com", "threads.net", "threads.com",
+                "tiktok.com", "linkedin.com", "bsky.app", "reddit.com", "old.reddit.com", "youtu.be"}
+HOST_ALIASES = {"twitter.com": "x.com", "mobile.twitter.com": "x.com", "mobile.x.com": "x.com", "old.reddit.com": "reddit.com",
+                "threads.com": "threads.net"}
 _RESERVED = {"orgs", "topics", "trending", "collections", "sponsors", "marketplace", "features", "about", "settings",
              "login", "join", "search", "explore", "notifications", "pulls", "issues", "apps", "users", "site", "enterprise"}
 REPO_RE = re.compile(r"(?<![\w.@/-])([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})(?![\w/-])")
@@ -35,6 +40,8 @@ def canonical_url(raw: str) -> str:
     host = (parts.hostname or "").lower().rstrip(".")
     if host.startswith("www."):
         host = host[4:]
+    social = host in SOCIAL_HOSTS
+    host = HOST_ALIASES.get(host, host)
     port = parts.port
     netloc = host if port in (None, 80, 443) else f"{host}:{port}"
     path = re.sub(r"/{2,}", "/", parts.path or "")
@@ -42,8 +49,8 @@ def canonical_url(raw: str) -> str:
         repo = _github_repo_from_path(path)
         if repo:
             return f"https://github.com/{repo[0]}/{repo[1]}"
-    query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=False)
-             if k.lower() in KEEP_KEYS or not (k.lower() in TRACKING_KEYS or k.lower().startswith(TRACKING_PREFIXES))]
+    query = [] if social else [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=False)
+                               if k.lower() in KEEP_KEYS or not (k.lower() in TRACKING_KEYS or k.lower().startswith(TRACKING_PREFIXES))]
     query.sort()
     if path.endswith("/") and path != "/":
         path = path.rstrip("/")

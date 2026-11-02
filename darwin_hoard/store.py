@@ -183,6 +183,40 @@ class Store:
             c.execute(f"UPDATE sources SET {sets} WHERE id=?", (*updates.values(), sid))
             return sid
 
+    def recanonicalize(self) -> dict[str, int]:
+        """Re-key URL sources after a change in ``canonical_url``: a source whose key changes is renamed, or merged into
+        the source that already has the new key (its captures, ideas, proposals and deliveries move with it). The old key
+        stays as an alias so lookups by it still land. Idempotent."""
+        renamed = merged = 0
+        for row in self.q("SELECT id, key, url FROM sources WHERE key LIKE 'url:%'"):
+            new_url = canonical_url(row["key"][4:])
+            new_key = source_key(url=new_url) if new_url else row["key"]
+            if new_key == row["key"]:
+                continue
+            with self.tx() as c:
+                target = c.execute("SELECT id FROM sources WHERE key=?", (new_key,)).fetchone()
+                sid = int(row["id"])
+                if target is None:
+                    c.execute("UPDATE sources SET key=?, url=?, updated=? WHERE id=?", (new_key, new_url, time.time(), sid))
+                    c.execute("INSERT OR IGNORE INTO source_aliases(alias, source_id) VALUES (?,?)", (row["key"], sid))
+                    renamed += 1
+                    continue
+                tid = int(target["id"])
+                for table in ("captures", "ideas", "proposals", "deliveries"):
+                    c.execute(f"UPDATE {table} SET source_id=? WHERE source_id=?", (tid, sid))
+                c.execute("INSERT OR IGNORE INTO capture_sources(capture_id, source_id) "
+                          "SELECT capture_id, ? FROM capture_sources WHERE source_id=?", (tid, sid))
+                c.execute("DELETE FROM capture_sources WHERE source_id=?", (sid,))
+                c.execute("UPDATE OR IGNORE source_aliases SET source_id=? WHERE source_id=?", (tid, sid))
+                c.execute("DELETE FROM source_aliases WHERE source_id=?", (sid,))
+                c.execute("INSERT OR IGNORE INTO source_aliases(alias, source_id) VALUES (?,?)", (row["key"], tid))
+                c.execute("UPDATE sources SET first_seen=MIN(first_seen, (SELECT first_seen FROM sources WHERE id=?)), "
+                          "last_seen=MAX(last_seen, (SELECT last_seen FROM sources WHERE id=?)) WHERE id=?", (sid, sid, tid))
+                c.execute("DELETE FROM sources WHERE id=?", (sid,))
+                c.execute("UPDATE sources SET captures=(SELECT COUNT(*) FROM capture_sources WHERE source_id=?) WHERE id=?", (tid, tid))
+                merged += 1
+        return {"renamed": renamed, "merged": merged}
+
     def _alias(self, key: str) -> Optional[int]:
         row = self.one("SELECT source_id FROM source_aliases WHERE alias=?", (key,))
         return row["source_id"] if row else None
@@ -224,6 +258,16 @@ class Store:
                 c.execute("INSERT OR IGNORE INTO capture_sources(capture_id, source_id) VALUES (?,?)", (cid, source_id))
                 c.execute("UPDATE sources SET captures=captures+1 WHERE id=?", (source_id,))
             return cid, True
+
+    def set_capture_declared(self, capture_id: int, key: str, value: Any) -> None:
+        """Add one derived field (e.g. ``ocr``) to a capture's ``declared`` JSON without touching the rest."""
+        with self.tx() as c:
+            row = c.execute("SELECT declared FROM captures WHERE id=?", (capture_id,)).fetchone()
+            if row is None:
+                return
+            data = json.loads(row["declared"] or "{}")
+            data[key] = value
+            c.execute("UPDATE captures SET declared=? WHERE id=?", (_j(data), capture_id))
 
     def link_capture(self, capture_id: int, source_id: int) -> None:
         with self.tx() as c:
