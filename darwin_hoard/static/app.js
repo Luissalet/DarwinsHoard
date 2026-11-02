@@ -251,16 +251,45 @@ async function loadInbox() {
     const r = await api(`/api/inbox?channel=${encodeURIComponent($('in-channel').value)}&limit=200`);
     $('in-count').textContent = `${r.total} capturas sin fuente`;
     $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total;
-    $('inbox').innerHTML = r.items.map((c) => `<div class="card"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
-      <p>${esc(c.text || '(sin texto)')}</p>${c.attachment && c.attachment !== '""' ? `<div class="prov">adjunto: ${esc(c.attachment)}</div>` : ''}
-      <div class="inline-form"><input data-cap="${c.id}" placeholder="URL u owner/repo de esta captura"><button class="btn small" data-link="${c.id}">Convertir en descubrimiento</button></div></div>`).join('') || '<div class="empty">Nada pendiente.</div>';
+    $('inbox').innerHTML = r.items.map((c) => {
+      const ocr = (c.declared && c.declared.ocr) || null;
+      const img = c.attachment && /\.(jpe?g|png|webp|gif|bmp)"?$/i.test(c.attachment);
+      const read = ocr ? (ocr.error ? `<div class="prov">No se pudo leer: ${esc(ocr.error)}</div>`
+        : `<details class="ocr"><summary>Leída: ${ocr.refs && ocr.refs.length ? 'enlaces encontrados' : 'sin repos ni enlaces reconocibles'}${ocr.unverified && ocr.unverified.length ? ` · sin confirmar: ${esc(ocr.unverified.join(', '))}` : ''}</summary><pre>${esc(ocr.text || '(sin texto)')}</pre></details>`)
+        : (img ? '<div class="prov">Pendiente de leer</div>' : '');
+      return `<div class="card inbox-card"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
+      ${img ? `<a href="/api/captures/${c.id}/media" target="_blank" rel="noopener"><img class="thumb" loading="lazy" src="/api/captures/${c.id}/media" alt="Captura"></a>` : ''}
+      ${c.text ? `<p>${esc(c.text)}</p>` : (img ? '' : '<p>(sin texto)</p>')}${read}
+      <div class="inline-form"><input data-cap="${c.id}" placeholder="URL u owner/repo de esta captura"><button class="btn small" data-link="${c.id}">Convertir en descubrimiento</button></div></div>`;
+    }).join('') || '<div class="empty">Nada pendiente.</div>';
     $('inbox').querySelectorAll('[data-link]').forEach((b) => b.addEventListener('click', async () => {
       const cap = r.items.find((c) => c.id === +b.dataset.link);
       const ref = $('inbox').querySelector(`[data-cap="${b.dataset.link}"]`).value.trim();
       try { await call('darwin_add', { text: ref ? `${ref}\n${cap.text || ''}` : (cap.text || ''), channel: 'manual', author: 'luis', note: `Desde la bandeja (${cap.channel})` }); toast('Convertido en descubrimiento.'); loadInbox(); } catch (e) { fail(e); }
     }));
   } catch (e) { fail(e); }
+  ocrStatus();
 }
+
+let ocrTimer = null;
+function ocrText(j) {
+  if (j.running) return j.total ? `Leyendo capturas… ${j.done}/${j.total}` : 'Leyendo capturas…';
+  if (j.error) return `OCR detenido: ${j.error}`;
+  if (j.finished) return `Última lectura: ${j.read || 0} capturas, ${j.linked || 0} con repos o enlaces${j.missing ? `, ${j.missing} sin imagen` : ''}.`;
+  return '';
+}
+async function ocrStatus() {
+  try {
+    const j = await api('/api/inbox/ocr');
+    $('in-ocr-status').textContent = ocrText(j);
+    $('in-ocr').disabled = !!j.running;
+    clearTimeout(ocrTimer);
+    if (j.running) ocrTimer = setTimeout(async () => { const k = await api('/api/inbox/ocr'); if (!k.running) loadInbox(); else ocrStatus(); }, 2000);
+  } catch (e) { /* the inbox still works without it */ }
+}
+$('in-ocr').addEventListener('click', async () => {
+  try { await api('/api/inbox/ocr', { method: 'POST' }); ocrStatus(); } catch (e) { fail(e); }
+});
 $('in-channel').addEventListener('change', loadInbox);
 
 // ------------------------------------------------------------------ tree

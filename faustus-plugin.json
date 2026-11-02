@@ -16,7 +16,8 @@
     "live-tool-map",
     "gaps",
     "changes-since",
-    "faustus-copilot"
+    "faustus-copilot",
+    "screenshot-ocr"
   ],
   "x-family": {
     "copilot": true

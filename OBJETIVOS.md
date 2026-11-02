@@ -6,4 +6,5 @@
 - [ ] Panel en Faustus y herramienta `darwin_ask` (pregunta en lenguaje natural sobre árbol + historial).
 - [ ] Exportar el árbol y la genealogía al Brain / knowledge graph de Faustus.
 - [ ] Debates por propuesta enlazados a hilos del Ágora desde la ficha.
-- [ ] Ingesta desde Links y Talos (capturas con OCR) usando `darwin_ingest`.
+- [ ] Ingesta desde Links y Talos usando `darwin_ingest` (los pantallazos del chat ya se leen con OCR).
+- [ ] Leer el texto de los posts de X enlazados (vía Links) para encontrar el repo que mencionan.
