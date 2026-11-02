@@ -33,4 +33,4 @@
 
 ## Icono de familia (2026-11-02)
 
-Dragon verde y arbol evolutivo dorado compartidos por cabecera, favicon, PWA y Hub. PNG 192/512 e ICO de seis tamanos; referencia en docs/ICONS.md.
+Dragon verde y arbol evolutivo dorado preparados para el Hub (PNG512) y Windows (ICO de seis tamanos). Cabecera, favicon y PWA conservan el icono anterior hasta sustituir los dos PNG static, reservados por la tarea1866. Referencia en docs/ICONS.md.
