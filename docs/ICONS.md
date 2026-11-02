@@ -8,7 +8,9 @@ of capabilities. Leaf green distinguishes Darwin's Hoard from the mint Kinect ic
 - `darwin_hoard/static/icon-192.png`: header, favicon and PWA icon.
 - `darwin_hoard/static/icon-512.png`: large PWA icon.
 
-All sizes derive from the same artwork. The full-size master is kept in the family
+The root PNG and ICO derive from the same artwork. The two static PWA/header
+images still await replacement by the owner of the active static-directory lock
+(Agora task 1866); they currently retain the previous tree icon. The full-size master is kept in the family
 Icons directory as `Darwins hoard.png`. The Hub discovers the root PNG and refreshes
 its revision automatically; no Hub restart is needed.
 
