@@ -1,10 +1,4 @@
-/* Darwin's Hoard on the Hoard theme. Its accent (until the shared palette table includes it): naturalist green. */
-html[data-hoard-app="darwin"] {
-  --hoard-deep: #151a16; --hoard-sunken: #111511; --hoard-surface: #1b211c; --hoard-elevated: #242b25; --hoard-hover: #2c342d;
-  --hoard-border: #364037; --hoard-border-hover: #56635a; --hoard-text: #e3ebe2; --hoard-text-muted: #b5bfb3; --hoard-text-dim: #98a396;
-  --hoard-accent: #9cc46f; --hoard-accent-strong: #b3d48d; --hoard-accent-dim: #7fa755; --hoard-accent-ink: #121611;
-  --hoard-accent-rgb: 156, 196, 111; --hoard-accent-soft: rgba(156, 196, 111, 0.14); --hoard-accent-line: rgba(156, 196, 111, 0.38);
-}
+/* Darwin's Hoard on the Hoard theme; its palette ("darwin", naturalist green) lives in the shared hoard-theme.css. */
 * { box-sizing: border-box; }
 html, body { height: 100%; }
 body { margin: 0; background: var(--hoard-deep); color: var(--hoard-text); font: 14px/1.45 var(--hoard-font-sans); }
