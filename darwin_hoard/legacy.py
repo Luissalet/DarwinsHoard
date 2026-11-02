@@ -381,7 +381,7 @@ class LegacyImporter:
     # ------------------------------------------------------------------ all at once
 
     def import_all(self, *, inspiration_dir: Path, radar_ideas: Optional[Path] = None, hub_url: str = "",
-                   agora: bool = True) -> dict[str, Any]:
+                   agora: bool = True, hoards_root: Optional[Path] = None) -> dict[str, Any]:
         out: dict[str, Any] = {}
         files = [("radar", inspiration_dir / "RADAR_GITTREND.md", self.import_radar),
                  ("radar-ideas", radar_ideas, lambda p: self.import_radar(p, channel="radar-ideas")),
@@ -397,6 +397,12 @@ class LegacyImporter:
                 out["agora"] = self.import_agora(hub_url).as_dict()
             except Exception as exc:  # noqa: BLE001
                 out["agora"] = {"error": str(exc)}
+        if hoards_root:
+            from .gaps import import_objectives
+            try:
+                out["objetivos"] = import_objectives(self.store, Path(hoards_root))
+            except Exception as exc:  # noqa: BLE001
+                out["objetivos"] = {"error": str(exc)}
         out["counts"] = self.store.counts()
         # Numbers come from the captures, not the sources: several radar entries can be the same source (two entries
         # pointing at the same releases page), and each must still count as present.
