@@ -1,0 +1,88 @@
+{
+  "schema": 1,
+  "id": "darwin",
+  "name": "Darwin's Hoard",
+  "purpose": "Keeps every discovery (GitHub repository, article, paper, video, idea) that could improve Faustus or a Hoard with where it came from, what was proposed for which app, what was delivered (commits, Ágora tasks) and the capability tree of the family (Faustus > Hoard Hub > Hoards > modules > capabilities > tools). Assistants check here before analysing a repository again, ask which app already does something, and record proposals, state changes and gaps.",
+  "capabilities": [
+    "discovery-history",
+    "radar-import",
+    "source-provenance",
+    "dedupe-by-canonical-url",
+    "proposals-per-app",
+    "delivery-tracking",
+    "state-history",
+    "capability-tree",
+    "capability-find",
+    "live-tool-map",
+    "gaps",
+    "changes-since",
+    "faustus-copilot"
+  ],
+  "x-family": {
+    "copilot": true
+  },
+  "placeholders": [
+    "DARWIN_DIR",
+    "APP_URL",
+    "TOKEN_FILE",
+    "PYTHON"
+  ],
+  "defaults": {
+    "APP_URL": "http://127.0.0.1:5233",
+    "TOKEN_FILE": "{DARWIN_DIR}/data/mcp-token",
+    "PYTHON": "{DARWIN_DIR}/.venv/Scripts/python.exe"
+  },
+  "app": {
+    "url_default": "http://127.0.0.1:5233",
+    "ui_url": "{APP_URL}",
+    "health": {
+      "path": "/api/health",
+      "expect": {
+        "service": "darwins-hoard"
+      }
+    },
+    "identify": {
+      "service": [
+        "darwins-hoard"
+      ],
+      "title": [
+        "darwin's hoard"
+      ]
+    },
+    "launch_hint": {
+      "kind": "process",
+      "executable": "{PYTHON}",
+      "argv": [
+        "-m",
+        "darwin_hoard",
+        "--no-browser"
+      ],
+      "cwd": "{DARWIN_DIR}",
+      "env": {
+        "PORT_STRICT": "1",
+        "DARWIN_PORT": "5233"
+      },
+      "readiness": {
+        "url": "{APP_URL}/api/health",
+        "timeout_s": 40
+      }
+    }
+  },
+  "mcp": {
+    "transport": "stdio",
+    "command": "{PYTHON}",
+    "args": [
+      "{DARWIN_DIR}/mcp_server.py"
+    ],
+    "env": {
+      "DARWIN_URL": "{APP_URL}",
+      "DARWIN_TOKEN_FILE": "{TOKEN_FILE}"
+    },
+    "optional_env": [
+      "DARWIN_BRIDGE_AUTOSTART",
+      "DARWIN_DATA_DIR",
+      "DARWIN_HUB_URL"
+    ]
+  },
+  "notes": "Python 3.11+ with FastAPI and the vendored Hoard Link copy (darwin_hoard/hoard_link). Data in data/darwin.db (SQLite). Reads, never writes, the radar Markdown files, the hub (apps and Ágora tasks) and Faustus's tool catalogue; works with every other app stopped (last snapshot of the tree)."
+}

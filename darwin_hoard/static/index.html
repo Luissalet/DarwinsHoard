@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="es" data-hoard-app="darwin">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#151a16">
+  <title>Darwin's Hoard</title>
+  <link rel="icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/hoard-theme.css">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="/icon-192.png" alt="" class="brand-icon"><span class="brand-name">Darwin's Hoard</span></div>
+    <nav class="tabs" id="tabs">
+      <button class="tab" data-view="overview">Resumen</button>
+      <button class="tab" data-view="history">Historial</button>
+      <button class="tab" data-view="tree">Árbol</button>
+      <button class="tab" data-view="changes">Novedades <span class="badge" id="changes-badge" hidden></span></button>
+      <button class="tab" data-view="gaps">Carencias</button>
+    </nav>
+    <form class="quick-add" id="quick-add" autocomplete="off">
+      <input id="add-text" placeholder="Añadir: URL, owner/repo o texto" aria-label="Añadir descubrimiento">
+      <button class="btn primary" type="submit">Añadir</button>
+    </form>
+  </header>
+
+  <main id="views">
+    <!-- Resumen -->
+    <section class="view" id="view-overview">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid2">
+        <div class="card"><h3>Descubrimientos por estado</h3><div id="ov-states" class="bars"></div></div>
+        <div class="card"><h3>Apps con más propuestas</h3><div id="ov-targets" class="bars"></div></div>
+        <div class="card"><h3>De dónde llegan</h3><div id="ov-channels" class="bars"></div></div>
+        <div class="card"><h3>Entregas</h3><div id="ov-deliveries" class="bars"></div><p class="hint">«Integrada» es lo que dicen el seguimiento o el Ágora; «documentada» indica que aún no se ha comprobado contra la rama principal.</p></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Importaciones</h3>
+          <div class="actions"><button class="btn" id="btn-import">Importar histórico</button><button class="btn" id="btn-tree-refresh">Refrescar árbol</button></div></div>
+        <div id="ov-imports" class="table-wrap"></div>
+        <p class="hint" id="ov-missing"></p>
+      </div>
+    </section>
+
+    <!-- Historial -->
+    <section class="view" id="view-history">
+      <div class="filters" id="filters">
+        <input id="f-q" placeholder="Buscar: texto, owner/repo, URL o #número" aria-label="Buscar">
+        <select id="f-state" aria-label="Estado"><option value="">Cualquier estado</option></select>
+        <select id="f-target" aria-label="App"><option value="">Cualquier app</option></select>
+        <select id="f-channel" aria-label="Origen"><option value="">Cualquier origen</option></select>
+        <select id="f-order" aria-label="Orden">
+          <option value="recent">Más recientes</option><option value="radar">Nº de radar ↑</option><option value="radar_desc">Nº de radar ↓</option>
+          <option value="captures">Más apariciones</option><option value="title">Nombre</option><option value="oldest">Más antiguos</option>
+        </select>
+        <label class="check"><input type="checkbox" id="f-pinned"> Solo los que marqué 📌</label>
+        <span class="spacer"></span>
+        <span class="meta" id="f-count"></span>
+      </div>
+      <div class="split">
+        <div class="list-wrap">
+          <table class="list" id="list">
+            <thead><tr><th class="num">#</th><th>Descubrimiento</th><th>Estado</th><th>Apps</th><th class="num">Vist.</th><th>Último</th></tr></thead>
+            <tbody></tbody>
+          </table>
+          <div class="pager"><button class="btn ghost" id="pg-prev">Anterior</button><span id="pg-info"></span><button class="btn ghost" id="pg-next">Siguiente</button></div>
+        </div>
+        <aside class="detail" id="detail"><div class="empty">Elige un descubrimiento para ver de dónde vino, qué se propuso, qué se entregó y su historia.</div></aside>
+      </div>
+    </section>
+
+    <!-- Árbol -->
+    <section class="view" id="view-tree">
+      <form class="filters" id="cap-find" autocomplete="off">
+        <input id="cap-q" placeholder="¿Quién hace…? (OCR, voz, mapas 3D, precios…)" aria-label="Buscar capacidad">
+        <button class="btn" type="submit">Buscar</button>
+        <label class="check"><input type="checkbox" id="t-tools" checked> Herramientas</label>
+        <span class="spacer"></span>
+        <span class="meta" id="tree-meta"></span>
+      </form>
+      <div class="split">
+        <div class="tree-wrap"><div id="cap-results"></div><ul class="tree" id="tree"></ul></div>
+        <aside class="detail" id="node-detail"><div class="empty">Elige una rama o una capacidad.</div></aside>
+      </div>
+    </section>
+
+    <!-- Novedades -->
+    <section class="view" id="view-changes">
+      <div class="filters"><span id="changes-since" class="meta"></span><span class="spacer"></span>
+        <select id="changes-range"><option value="visit">Desde mi última visita</option><option value="1">Último día</option><option value="7" selected>Última semana</option><option value="30">Último mes</option></select>
+        <button class="btn ghost" id="btn-mark-seen">Marcar como visto</button></div>
+      <div class="grid2" id="changes"></div>
+    </section>
+
+    <!-- Carencias -->
+    <section class="view" id="view-gaps">
+      <form class="card gap-form" id="gap-form" autocomplete="off">
+        <h3>Nueva carencia</h3>
+        <input id="gap-title" placeholder="Qué quieres poder hacer y ninguna app hace" required minlength="3">
+        <textarea id="gap-detail" rows="2" placeholder="Detalle (opcional)"></textarea>
+        <div class="row"><select id="gap-target"><option value="">App (opcional)</option></select>
+          <input id="gap-watch" placeholder="Qué tendría que cambiar para poder hacerlo (opcional)"><button class="btn primary" type="submit">Guardar</button></div>
+      </form>
+      <div id="gaps"></div>
+    </section>
+  </main>
+
+  <dialog id="add-dialog" class="dialog">
+    <form method="dialog" id="add-form">
+      <h2>Añadir descubrimiento</h2>
+      <textarea id="add-full" rows="3" placeholder="URL, owner/repo o texto (un mensaje, el texto de una captura)"></textarea>
+      <label class="row"><span>Para</span><select id="add-target"><option value="">Sin decidir</option></select></label>
+      <label class="row"><span>Nota</span><input id="add-note" placeholder="Por qué interesa"></label>
+      <div id="add-result"></div>
+      <div class="dialog-actions"><button class="btn" value="cancel">Cerrar</button><button class="btn primary" id="add-save" value="default">Guardar</button></div>
+    </form>
+  </dialog>
+
+  <div class="toasts" id="toasts"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

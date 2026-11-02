@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "darwins-hoard"
+version = "0.1.0"
+description = "Discovery history with provenance, proposals and deliveries per app, and the capability tree of the Hoard family, with an MCP bridge."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Luissalet" }]
+dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.30", "pydantic>=2.7", "httpx>=0.27", "mcp>=1.10,<2"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pillow>=10"]
+
+[project.scripts]
+darwins-hoard = "darwin_hoard.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["darwin_hoard*"]
+
+[tool.setuptools.package-data]
+darwin_hoard = ["static/**/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]

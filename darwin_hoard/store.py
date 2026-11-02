@@ -273,6 +273,8 @@ class Store:
                 c.execute(f"UPDATE proposals SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?", (*updates.values(), pid))
         if row["state"] != state and _rank(origin) >= _rank(row["origin"] or ""):
             self.set_state("proposals", pid, "state", state, by=by, note=origin)
+            with self.tx() as c:
+                c.execute("UPDATE proposals SET origin=? WHERE id=?", (origin, pid))
         return pid
 
     def upsert_delivery(self, *, key: str, source_id: Optional[int], target: str, proposal_id: Optional[int] = None, repo: str = "",

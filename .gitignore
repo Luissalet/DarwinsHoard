@@ -11,3 +11,4 @@ __pycache__/
 native/bairdcap.exe
 native/bairdcap.new.exe
 native/*.pdb
+.faustus/
