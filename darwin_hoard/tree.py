@@ -38,6 +38,8 @@ ALIASES = {
     "precios": "price", "busqueda": "search", "buscar": "search", "reunion": "meeting minutes", "reuniones": "meeting minutes",
     "traducir": "translate", "modelos": "model", "juego": "game", "juegos": "game games", "mapa": "map terrain", "mapas": "map terrain",
     "musica": "music", "libros": "library books", "ocr": "ocr", "transcripcion": "transcription speech",
+    "transcribir": "transcription speech", "grabar": "recording", "audio": "audio sound", "resumen": "summary digest",
+    "repos": "repository git", "git": "git repository commits", "agentes": "agent agents", "navegador": "browser",
 }
 
 

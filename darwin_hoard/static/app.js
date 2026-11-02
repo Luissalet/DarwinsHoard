@@ -94,9 +94,11 @@ async function loadOverview() {
       (k) => { $('f-target').value = k; state.page = 0; show('history'); });
     bars($('ov-channels'), Object.entries(ov.captures_by_channel).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, n, CHANNEL_LABEL[k] || k]),
       (k) => { $('f-channel').value = k; state.page = 0; show('history'); });
-    const dv = [...Object.entries(ov.deliveries_by_implementation).map(([k, n]) => [k, n, STATE_LABEL[k] || k]),
-      ...Object.entries(ov.deliveries_by_verification).map(([k, n]) => [`v:${k}`, n, `Verificación: ${VERIF_LABEL[k] || k}`])];
+    const ANC = { en_main: 'Commit en main', fuera_de_main: 'Commit fuera de main', commit_no_encontrado: 'Commit no encontrado', sin_comprobar: 'Sin poder comprobar' };
+    const dv = [...Object.entries(ov.deliveries_by_implementation).map(([k, n]) => [k, n, `Declarada ${(STATE_LABEL[k] || k).toLowerCase()}`]),
+      ...['en_main', 'fuera_de_main', 'commit_no_encontrado', 'sin_comprobar'].filter((k) => ov.deliveries_by_ancestry?.[k]).map((k) => [`a:${k}`, ov.deliveries_by_ancestry[k], ANC[k]])];
     bars($('ov-deliveries'), dv);
+    $('ov-deliveries').insertAdjacentHTML('beforeend', `<p class="hint">${ov.deliveries_verified_at ? `Commits comprobados contra la rama principal el ${whenFull(ov.deliveries_verified_at)}.` : 'Aún no se han comprobado los commits: pulsa «Comprobar entregas».'} Un commit en main es evidencia de código, no una prueba de que funcione.</p>`);
     $('ov-imports').innerHTML = ov.imports.length ? `<table><thead><tr><th>Qué</th><th>Fichero</th><th>Entradas</th><th>Nuevas</th><th>Cuándo</th></tr></thead><tbody>${ov.imports.map((i) => `<tr><td>${esc(CHANNEL_LABEL[i.name] || i.name)}</td><td class="mono" title="sha256 ${esc(i.sha256)}">${esc(i.file)}</td><td>${i.counts?.entries ?? ''}</td><td>${i.counts?.new_captures ?? ''}</td><td>${whenFull(i.at)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no se ha importado nada. Pulsa «Importar histórico».</div>';
     const miss = ov.radar_missing || [];
     $('ov-missing').textContent = ov.radar?.n ? `Radar: ${ov.radar.n} números distintos, el más alto el ${ov.radar.max}.${miss.length ? ` Sin entrada en ninguna fuente: ${miss.join(', ')}.` : ''}` : '';
@@ -127,7 +129,7 @@ $('wa-find').addEventListener('click', async () => {
     const g = r.chats.find((c) => /gittrend/i.test(c.name || c.chat_name || ''));
     if (g) sel.value = g.jid || g.id;
     $('wa-status').textContent = `${r.chats.length} chats en el puente.${g ? ' Gittrend encontrado.' : ''}`;
-  } catch (e) { $('wa-status').textContent = `El puente de WhatsApp de Faustus no responde (${e.message}). Arráncalo y vincúlalo desde Faustus.`; }
+  } catch (e) { $('wa-status').textContent = /not running|ConnectError|503/.test(e.message) ? 'El puente de WhatsApp de Faustus está parado. Arráncalo en Faustus (Herramientas → WhatsApp) y vincúlalo escaneando el QR con el móvil; después pulsa «Buscar chats».' : `No se pudo leer el puente de WhatsApp: ${e.message}`; }
 });
 $('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
 $('wa-sync').addEventListener('click', async () => {

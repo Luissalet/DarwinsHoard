@@ -176,6 +176,12 @@ def overview(store: Store) -> dict[str, Any]:
     by_impl = {r["implementation"]: r["n"] for r in store.q("SELECT implementation, COUNT(*) AS n FROM deliveries GROUP BY implementation")}
     by_verif = {r["verification"]: r["n"] for r in store.q("SELECT verification, COUNT(*) AS n FROM deliveries GROUP BY verification")}
     by_channel = {r["channel"]: r["n"] for r in store.q("SELECT channel, COUNT(*) AS n FROM captures GROUP BY channel")}
+    by_ancestry = {}
+    for r in store.q("SELECT COALESCE(json_extract(evidence, '$.commit_ancestry.status'), 'sin_comprobar') AS st, "
+                     "json_extract(evidence, '$.commit_ancestry.reason') AS why, COUNT(*) AS n FROM deliveries GROUP BY st, why"):
+        key = {"integrated": "en_main", "not_in_main": "fuera_de_main"}.get(r["st"]) or (
+            "commit_no_encontrado" if r["why"] == "commit_not_found" else "sin_comprobar")
+        by_ancestry[key] = by_ancestry.get(key, 0) + r["n"]
     targets = store.q("SELECT target, COUNT(*) AS proposals, SUM(state IN ('aceptada','investigando')) AS active, "
                       "SUM(state='pendiente') AS pending FROM proposals WHERE target IS NOT NULL GROUP BY target ORDER BY proposals DESC")
     imports = store.q("SELECT name, file, sha256, at, counts FROM imports ORDER BY at DESC LIMIT 12")
@@ -192,7 +198,8 @@ def overview(store: Store) -> dict[str, Any]:
         agg[a] = agg.get(a, 0) + 1
     return {"counts": counts, "sources_by_state": agg, "proposals_untargeted": untargeted,
             "radar_missing": store.get_meta("radar_missing", []), "proposals_by_state": by_state, "deliveries_by_implementation": by_impl,
-            "deliveries_by_verification": by_verif, "captures_by_channel": by_channel, "targets": targets,
+            "deliveries_by_verification": by_verif, "deliveries_by_ancestry": by_ancestry,
+            "deliveries_verified_at": store.get_meta("deliveries_verified_at"), "captures_by_channel": by_channel, "targets": targets,
             "imports": imports, "captures_last_7_days": recent, "radar": radar}
 
 
