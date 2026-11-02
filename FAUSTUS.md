@@ -30,3 +30,7 @@
 
 - Fitness ranking of discoveries, gap-driven radar searches and Brain export (see OBJETIVOS.md).
 - Read WhatsApp history the bridge never received.
+
+## Icono de familia (2026-11-02)
+
+Dragon verde y arbol evolutivo dorado compartidos por cabecera, favicon, PWA y Hub. PNG 192/512 e ICO de seis tamanos; referencia en docs/ICONS.md.
