@@ -80,7 +80,6 @@
       "DARWIN_TOKEN_FILE": "{TOKEN_FILE}"
     },
     "optional_env": [
-      "DARWIN_BRIDGE_AUTOSTART",
       "DARWIN_DATA_DIR",
       "DARWIN_HUB_URL"
     ]
