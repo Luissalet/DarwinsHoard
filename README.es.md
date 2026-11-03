@@ -17,11 +17,12 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
 - **Historial**: todos los hallazgos.
   - Se filtran por texto, `owner/repo`, URL o número de radar, estado, app, origen y marcados con 📌, y se pueden ordenar.
   - Cada hallazgo abre su genealogía: apariciones con fichero y línea, propuestas por app con su historial, y entregas con commits, indicando si el commit está en main.
+  - El estado agregado cuenta por propuesta (app o capacidad de una app), no por app: si hay dos capacidades propuestas para la misma app y solo una tiene entrega integrada, el hallazgo sale «mixta», no «integrada».
   - Desde ahí se cambian estados y se crean propuestas. «Debatir en el Ágora» abre un hilo por propuesta con su genealogía y muestra los mensajes en la ficha. «Proponer apps (IA)» hace que el modelo local proponga app para los hallazgos sin propuesta: quedan pendientes y nunca pisan tus decisiones.
 - **Bandeja**: capturas sin fuente todavía, con la imagen y el texto que leyó el OCR. Nunca se pierden; un clic las convierte en hallazgo. «Leer capturas (OCR)» lee los pantallazos con el OCR de la familia (el de Kafka) y enlaza las URL y los `owner/repo` que GitHub confirma; también se lanza solo tras sincronizar el chat.
 - **Árbol**: Faustus (raíz) > Hoard Hub > Hoards > módulos absorbidos > capacidades > herramientas reales.
   - Cada nodo indica su evidencia (*declarada*, *viva*) y su estado (*disponible*, *detenida*).
-  - El buscador «¿Quién hace…?» dice qué apps cubren ya algo y su ruta en el árbol.
+  - El buscador «¿Quién hace…?» dice qué apps cubren ya algo y su ruta en el árbol. Lo que una descripción niega («Does not perform OCR…») no cuenta como coincidencia.
 - **Cuentas para leer posts** (en Resumen): conectas X, Instagram, Threads, TikTok, Reddit, Facebook o YouTube; se abre una ventana de Links en tu ordenador y entras tú, sin que la contraseña pase por Darwin. «Leer posts» lee los tuits y posts enlazados y convierte en hallazgos los repos y enlaces que contienen. Si un sitio no deja leer, se para y te dice qué cuenta conectar.
 - **Puntuación**: cada hallazgo abierto tiene una nota de 0 a 100 con sus motivos (encaja con una carencia, reaparece, estrellas, licencia, novedad, es un repo concreto). Historial ordena por ella con «Más interesantes».
 - **Brain de Faustus**: Darwin escribe notas enlazadas en `Notes/Darwin/` del Brain (índice, una por app y una por hallazgo vivo) cada pocas horas o con `darwin_brain_export`; solo reescribe sus propias notas.
@@ -54,6 +55,8 @@ Los estados de propuesta, implementación, verificación y operación van por se
 ## Arrancar
 
 `Iniciar Darwin's Hoard.cmd`, o desde el Hoard Hub. Datos en `data/darwin.db` y ajustes en `data/settings.json`.
+
+El puente MCP (`mcp_server.py`) nunca arranca la app: con Darwin parado lista las herramientas del propio paquete y una llamada responde `not_running`. Se arranca a propósito desde el Hoard Hub (Iniciar en su tarjeta o `POST http://127.0.0.1:8810/api/apps/darwin/start`), con `Iniciar Darwin's Hoard.cmd` o con `python -m darwin_hoard`.
 
 ## Pruebas
 

@@ -56,6 +56,32 @@ def folded(value: Any) -> str:
     return "".join(c for c in unicodedata.normalize("NFKD", str(value).lower()) if not unicodedata.combining(c))
 
 
+#: A negation cue (English or Spanish) followed by a space: «does not», «doesn't», «never», «without», «no», «sin», «nunca», «ni».
+#: «not only» / «no solo» / «not just» are not negations, nor is «no-code» (no space after the cue) or a condition
+#: («if not», «si no», «cuando no»: what the tool does otherwise is still what it does).
+_NEGATION_CUE = re.compile(r"(?<!\bif )(?<!\bsi )(?<!\bwhen )(?<!\bcuando )(?<!\bunless )"
+                           r"\b(?:(?:does|do|did|is|are|was|were|has|have|had|can|could|will|would|should|wo|ca)n't|cannot|never|not|"
+                           r"without|no|sin|nunca|ni|tampoco)\s+(?!(?:only|just|merely|solo|solamente|unicamente)\b)")
+#: Where the negated stretch ends: the end of the sentence or clause, or a contrast word («but», «instead», «pero», «sino»).
+_NEGATION_END = re.compile(r"[.;:!?\n()\[\]]|\b(?:but|instead|rather|although|however|pero|sino|aunque|en cambio)\b")
+
+
+def affirmed(text: str) -> str:
+    """``text`` without the stretches it denies, so «Does not perform OCR, transcription or model inference.» does not
+    make its tool an OCR provider. Deterministic: a negation cue removes everything up to the end of its sentence or
+    clause (or a contrast word); the rest of the text is kept as is."""
+    text = str(text or "").replace("’", "'")
+    out, pos = [], 0
+    while True:
+        m = _NEGATION_CUE.search(text, pos)
+        if not m:
+            out.append(text[pos:])
+            return " ".join(part for part in out if part)
+        out.append(text[pos:m.start()])
+        end = _NEGATION_END.search(text, m.end())
+        pos = end.start() if end else len(text)
+
+
 def _get(url: str, timeout: float = 15.0, headers: Optional[dict] = None) -> Any:
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -294,7 +320,8 @@ def find(store: Store, query: str, limit: int = 30, include_tools: bool = True) 
     for r in rows:
         if r["level"] == "tool" and not include_tools:
             continue
-        hay = folded(f"{r['name']} {r['detail'] or ''}" if r["level"] in ("tool", "capability") else f"{r['name']} {r['detail'] or ''}")
+        # what a description denies («Does not perform OCR») is not a capability: only the affirmed text is matched
+        hay = f"{folded(r['name'])} {affirmed(folded(r['detail'] or ''))}"
         tokens = set(re.findall(r"[a-z0-9]+", hay))
         score = sum(2 if t in tokens else (1 if len(t) >= 4 and any(tok.startswith(t) for tok in tokens) else 0) for t in terms)
         if not score:
