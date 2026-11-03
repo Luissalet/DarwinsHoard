@@ -19,6 +19,13 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
   - Cada hallazgo abre su genealogía: apariciones con fichero y línea, propuestas por app con su historial, y entregas con commits, indicando si el commit está en main.
   - El estado agregado cuenta por propuesta (app o capacidad de una app), no por app: si hay dos capacidades propuestas para la misma app y solo una tiene entrega integrada, el hallazgo sale «mixta», no «integrada».
   - Desde ahí se cambian estados y se crean propuestas. «Debatir en el Ágora» abre un hilo por propuesta con su genealogía y muestra los mensajes en la ficha. «Proponer apps (IA)» hace que el modelo local proponga app para los hallazgos sin propuesta: quedan pendientes y nunca pisan tus decisiones.
+- **Historial: filtros guardados y cobertura**. «Guardar filtro» guarda la búsqueda, el estado, la app, el origen, el orden y 📌 con un nombre que reutilizan la lista, `darwin_find` (`saved`) y los agentes. En la ficha, «¿Ya lo cubre alguna app?» compara sus palabras con el árbol: *ya cubierto*, *cubierto en parte* o *nadie lo hace*, con las apps y nodos que coinciden. Explica, nunca bloquea. `?open=<id>` abre un hallazgo y `?app=<id>` filtra por app.
+- **Propuestas**: todas las propuestas en una lista, filtrable por estado, app, origen y palabras, con recuento por estado. El estado se cambia desde la fila.
+- **Investigaciones**:
+  - **Radar por carencias**: las carencias abiertas ordenadas por lo que ayudaría buscarlas, cada una con su búsqueda de GitHub y web (palabras clave en inglés que escribe una vez el modelo local y se guardan por carencia), los hallazgos que quizá ya la responden y si el árbol quizá ya la cubre. «Buscar en GitHub» lanza las tres primeras (o una con «Buscar esta»), descarta las listas de enlaces, dice qué repos ya conocía Darwin y, con «Guardar los repos nuevos», los registra.
+  - **Preguntas guardadas** («avísame cuando…»): se repiten cada cuatro horas y solo avisan cuando aparecen hallazgos, cambios de estado o apps nuevos, con una notificación de la familia.
+  - Una tarea programada llama a `darwin_radar_plan` o `darwin_watches_check` y calla cuando `notify` es falso.
+- **Panel en Faustus**: la portada de cada proyecto de Faustus muestra una tarjeta de Darwin para el Hoard del proyecto (Research y ecosystem: toda la familia y las siguientes búsquedas del radar), leída a través del Hub (`GET /api/hoard/darwin/panel`). La página de Darwin enseña lo mismo con `?embed=panel&space=…&project=…`.
 - **Bandeja**: capturas sin fuente todavía, con la imagen y el texto que leyó el OCR. Nunca se pierden; un clic las convierte en hallazgo. «Leer capturas (OCR)» lee los pantallazos con el OCR de la familia (el de Kafka) y enlaza las URL y los `owner/repo` que GitHub confirma; también se lanza solo tras sincronizar el chat.
 - **Árbol**: Faustus (raíz) > Hoard Hub > Hoards > módulos absorbidos > capacidades > herramientas reales.
   - Cada nodo indica su evidencia (*declarada*, *viva*) y su estado (*disponible*, *detenida*).
@@ -42,6 +49,10 @@ Los estados de propuesta, implementación, verificación y operación van por se
 ## Trajes: herramientas y rutas
 
 `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_capability_mark`, `darwin_gaps_reconcile`, `darwin_suit_import_eval`. REST: `GET /api/suits`, `GET|PUT|DELETE /api/suits/{slug}`, `POST /api/suits/{slug}/evaluation`, `POST /api/evaluations`, `POST /api/capabilities/mark`, `GET /api/gaps`, `POST /api/gaps/reconcile`. Una evaluación se rechaza si no tiene ningún caso puntuado; los casos usados para construir la mejora llegan excluidos y se muestran aparte.
+
+## Investigaciones: herramientas y rutas
+
+`darwin_coverage`, `darwin_radar_plan`, `darwin_radar_run`, `darwin_watch_add`, `darwin_watches`, `darwin_watches_check`, `darwin_watch_update`, `darwin_proposals`, `darwin_saved_filters`, `darwin_panel`. REST: `GET /api/coverage`, `GET /api/radar/plan`, `POST /api/radar/run`, `GET|POST /api/watches`, `POST /api/watches/check`, `PATCH|DELETE /api/watches/{id}`, `GET /api/proposals`, `GET /api/filters`, `PUT|DELETE /api/filters/{nombre}`, `GET /api/panel`.
 
 ## Orígenes
 

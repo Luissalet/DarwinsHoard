@@ -15,10 +15,12 @@
     <nav class="tabs" id="tabs">
       <button class="tab" data-view="overview">Resumen</button>
       <button class="tab" data-view="history">Historial</button>
+      <button class="tab" data-view="proposals">Propuestas</button>
       <button class="tab" data-view="inbox">Bandeja <span class="badge" id="inbox-badge" hidden></span></button>
       <button class="tab" data-view="tree">Árbol</button>
       <button class="tab" data-view="changes">Novedades <span class="badge" id="changes-badge" hidden></span></button>
       <button class="tab" data-view="gaps">Carencias <span class="badge" id="gaps-badge" hidden title="Posiblemente obsoletas"></span></button>
+      <button class="tab" data-view="research">Investigaciones <span class="badge" id="research-badge" hidden title="Preguntas guardadas con novedades"></span></button>
       <button class="tab" data-view="suits" title="Suits">Trajes</button>
     </nav>
     <form class="quick-add" id="quick-add" autocomplete="off">
@@ -74,6 +76,9 @@
           <option value="captures">Más apariciones</option><option value="title">Nombre</option><option value="oldest">Más antiguos</option>
         </select>
         <label class="check"><input type="checkbox" id="f-pinned"> Solo los que marqué 📌</label>
+        <select id="f-saved" aria-label="Filtros guardados"><option value="">Filtros guardados…</option></select>
+        <button class="btn small" id="f-save" type="button" title="Guarda la búsqueda, el estado, la app, el origen y el orden con un nombre">Guardar filtro</button>
+        <button class="btn small ghost" id="f-delete" type="button" hidden>Borrar filtro</button>
         <button class="btn small" id="f-triage" type="button" title="El modelo local propone una app para cada descubrimiento sin propuesta">Proponer apps (IA)</button>
         <span class="meta" id="f-triage-status" role="status" aria-live="polite"></span>
         <span class="spacer"></span>
@@ -90,6 +95,48 @@
         <aside class="detail" id="detail"><div class="empty">Elige un descubrimiento para ver de dónde vino, qué se propuso, qué se entregó y su historia.</div></aside>
       </div>
     </section>
+
+    <!-- Propuestas -->
+    <section class="view" id="view-proposals">
+      <div class="filters">
+        <input id="p-q" placeholder="Buscar en propuestas" aria-label="Buscar en propuestas">
+        <select id="p-state" aria-label="Estado"><option value="">Cualquier estado</option></select>
+        <select id="p-target" aria-label="App"><option value="">Cualquier app</option></select>
+        <select id="p-origin" aria-label="Quién la propuso"><option value="">Cualquier origen</option></select>
+        <span class="spacer"></span><span class="meta" id="p-count"></span>
+      </div>
+      <div class="bars compact" id="p-counts"></div>
+      <div class="list-wrap">
+        <table class="list" id="p-list">
+          <thead><tr><th>Descubrimiento</th><th>App</th><th>Estado</th><th>Origen</th><th>Motivo</th><th>Cambio</th></tr></thead>
+          <tbody></tbody>
+        </table>
+        <div class="pager"><button class="btn ghost" id="p-prev">Anterior</button><span id="p-info"></span><button class="btn ghost" id="p-next">Siguiente</button></div>
+      </div>
+    </section>
+
+    <!-- Investigaciones -->
+    <section class="view" id="view-research">
+      <div class="card">
+        <div class="card-head"><h3>Radar por carencias</h3>
+          <div class="actions"><button class="btn" id="rd-refresh" type="button">Recalcular</button>
+            <label class="check"><input type="checkbox" id="rd-add"> Guardar los repos nuevos</label>
+            <button class="btn primary" id="rd-run" type="button">Buscar en GitHub (3 primeras)</button></div></div>
+        <p class="hint">Las carencias abiertas ordenadas por lo que ayudaría buscarlas: nunca buscadas, antiguas, sin candidatos en Darwin y sin cubrir en el árbol suben. Cada una trae su búsqueda de GitHub y web; una tarea programada puede llamar a <code>darwin_radar_plan</code> y callar cuando no hay novedades.</p>
+        <p class="meta" id="rd-status" role="status" aria-live="polite"></p>
+        <div id="rd-list"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h3>Preguntas guardadas</h3>
+          <div class="actions"><button class="btn" id="wt-check" type="button">Comprobar ahora</button></div></div>
+        <p class="hint">«Avísame cuando…»: Darwin repite la pregunta cada pocas horas y solo avisa cuando aparecen descubrimientos, cambios de estado o apps nuevos.</p>
+        <form class="inline-form" id="wt-form" autocomplete="off"><input id="wt-q" maxlength="500" placeholder="Avísame cuando haya algo para… (p. ej. leer PDFs escaneados)" aria-label="Pregunta a guardar"><button class="btn primary" type="submit">Guardar pregunta</button></form>
+        <div id="wt-list"></div>
+      </div>
+    </section>
+
+    <!-- Panel para Faustus (?embed=panel) -->
+    <section class="view" id="view-panel"><div id="panel"></div></section>
 
     <!-- Bandeja -->
     <section class="view" id="view-inbox">

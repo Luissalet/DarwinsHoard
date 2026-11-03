@@ -12,7 +12,7 @@ import json
 import time
 from typing import Any, Callable, Optional
 
-from . import tree
+from . import coverage, tree
 from .store import Store
 
 ChatFn = Callable[..., dict[str, Any]]
@@ -59,9 +59,15 @@ def run(store: Store, chat: ChatFn, *, channel: str = "", limit: int = 50,
         near = tree.find(store, f"{src.get('title') or ''} {material[:600]}", limit=6).get("apps", [])
         near_ids = [a["app_id"] for a in near if a["app_id"] in cat]
         listing = "\n".join(f"- {k}: {v}" for k, v in cat.items())
+        cov = coverage.classify(store, source_id=src["id"])
+        covered_by = {a["app_id"]: a for a in cov["apps"] if cov["verdict"] == "covered" and a["strong_evidence"]
+                      and a["matched_groups"] >= max(3, -(-a["of"] // 2))}
+        cov_line = ("; ".join(f"{k} ya tiene {', '.join(n['name'] for n in v['nodes'][:3])}" for k, v in covered_by.items())
+                    or "ninguna app lo cubre ya según el árbol")
         res = chat([{"role": "system", "content": SYSTEM},
                     {"role": "user", "content": f"CATÁLOGO:\n{listing}\n\nApps cuyas capacidades comparten palabras: "
-                                                f"{', '.join(near_ids) or 'ninguna'}\n\nDESCUBRIMIENTO:\n{material}"}],
+                                                f"{', '.join(near_ids) or 'ninguna'}\nCobertura: {cov_line}. No propongas para una app "
+                                                f"algo que ya hace salvo que aporte algo nuevo concreto.\n\nDESCUBRIMIENTO:\n{material}"}],
                    json=SCHEMA, effort="low", max_tokens=300, temperature=0.1, timeout=90.0)
         if not res.get("ok"):
             return {"proposed": proposed, "skipped": skipped, "noise": noise, "remaining": len(todo) - i,
@@ -69,7 +75,12 @@ def run(store: Store, chat: ChatFn, *, channel: str = "", limit: int = 50,
         data = res.get("json") if isinstance(res.get("json"), dict) else {}
         app = data.get("app") if data.get("app") in cat else None
         verdict = {"at": time.time(), "app": app, "reason": str(data.get("reason") or "")[:300],
-                   "useful": bool(data.get("useful", app is not None)), "model": res.get("model")}
+                   "useful": bool(data.get("useful", app is not None)), "model": res.get("model"),
+                   "coverage": {"verdict": cov["verdict"], "apps": [a["app_id"] for a in cov["apps"][:3]]}}
+        if app and app in covered_by:
+            # the tree already answers it for that app: the proposal stays, flagged, for a person to check
+            verdict["already_covered"] = [n["key"] for n in covered_by[app]["nodes"][:3]]
+            verdict["reason"] = f"Posiblemente ya cubierto en {app}: {verdict['reason']}"[:300]
         meta = dict(src.get("meta") or {})
         meta["triage"] = verdict
         with store.tx() as c:
@@ -77,7 +88,8 @@ def run(store: Store, chat: ChatFn, *, channel: str = "", limit: int = 50,
         if app and verdict["useful"]:
             store.upsert_proposal(key=f"{src['key']}->{app}", source_id=src["id"], target=app, state="pendiente",
                                   origin="agent", reason=verdict["reason"], by="agent",
-                                  declared={"triage_model": res.get("model")})
+                                  declared={"triage_model": res.get("model"), **({"already_covered": verdict["already_covered"]}
+                                                                                 if verdict.get("already_covered") else {})})
             proposed.append({"source_id": src["id"], "title": src.get("title"), "app": app, "reason": verdict["reason"]})
         elif not verdict["useful"]:
             noise += 1

@@ -33,6 +33,8 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "brain_vault_dir": "",              # Faustus's Brain vault; empty = <Faustus>/data/brain/vault
     "brain_owner": "auto",              # Faustus user whose vault receives Notes/Darwin; auto = shared vault when Faustus has no login, else admin
     "brain_export_minutes": 360,        # 0 = only on demand
+    "watches_check_minutes": 240,       # saved questions («avísame cuando…»); 0 = only on demand
+    "watches_notify": True,             # a family notification when a saved question has news
 }
 
 
@@ -99,6 +101,9 @@ class Services:
                         self.brain_export()
                     except FileNotFoundError:
                         self.store.set_meta("brain_exported_at", time.time())  # no vault here: try again next period
+                watch_every = int(self.settings.get("watches_check_minutes") or 0)
+                if watch_every and time.time() - (self.store.get_meta("watches_checked_at", 0) or 0) > 60 * max(30, watch_every):
+                    self.check_watches()
             except Exception:  # noqa: BLE001 - never kill the loop
                 log.exception("tree refresh")
             self._stop.wait(300)
@@ -248,6 +253,38 @@ class Services:
         result = brain_export.export(self.store, base / owner)
         result["owner"] = owner
         self.store.set_meta("brain_exported_at", time.time())
+        return result
+
+    def _translate(self, gaps: list[dict[str, Any]]) -> dict[int, str]:
+        from . import radar
+        from .hoard_link import family
+        return radar.translate_with(family.chat, gaps)
+
+    def radar_plan(self, *, limit: int = 10, remember: bool = True) -> dict[str, Any]:
+        from . import radar
+        return radar.plan(self.store, limit=limit, remember=remember, translate=self._translate)
+
+    def radar_run(self, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_ids: list[int] | None = None) -> dict[str, Any]:
+        from . import radar
+        return radar.run(self.store, top=top, per_gap=per_gap, add=add, gap_ids=gap_ids, translate=self._translate)
+
+    def check_watches(self) -> dict[str, Any]:
+        """Ask every saved question again; with news (and ``watches_notify``), one family notification per question."""
+        from . import watches
+        result = watches.check_all(self.store)
+        if self.settings.get("watches_notify", True):
+            from .hoard_link import fam_notify
+            for w in result["with_news"]:
+                n = w["news"]
+                parts = [f"{len(n.get('discoveries', []))} descubrimientos nuevos" if n.get("discoveries") else "",
+                         f"{len(n.get('state_changes', []))} cambios de estado" if n.get("state_changes") else "",
+                         ("apps: " + ", ".join(n["apps"])) if n.get("apps") else ""]
+                try:
+                    w["notified"] = fam_notify.notify(f"Darwin: {w['question']}", " · ".join(p for p in parts if p),
+                                                      url=f"http://127.0.0.1:{self.config.port}/#research", group="darwin-watches",
+                                                      dedupe_key=f"darwin-watch-{w['id']}-{int(time.time() // 3600)}").get("ok", False)
+                except Exception:  # noqa: BLE001 - the hub may be closed: the news stays on the page
+                    w["notified"] = False
         return result
 
     def ask(self, question: str) -> dict[str, Any]:

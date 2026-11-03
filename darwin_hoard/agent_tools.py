@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import backing, query, reconcile, suit_seeds, suits, tree
+from . import backing, coverage, query, reconcile, suit_seeds, suits, tree, views, watches
 from .canon import canonical_url, extract_refs, repo_of, source_key
 from .errors import DarwinError
 from .hoard_link.agentkit import Empty, Tool, ann
@@ -39,6 +39,59 @@ class FindArgs(BaseModel):
         "recent", description="fitness = open discoveries most worth a look first (gaps, reappearances, stars, licence, recency).")
     limit: int = Field(30, ge=1, le=500)
     offset: int = Field(0, ge=0)
+    saved: str = Field("", max_length=60, description="Name of a saved filter (darwin_saved_filters) to apply underneath the other arguments.")
+
+
+class CoverageArgs(BaseModel):
+    source_id: Optional[int] = Field(None, ge=1, description="A discovery to check.")
+    text: str = Field("", max_length=4000, description="Or a free text: an idea, a gap, a repository description.")
+
+
+class RadarPlanArgs(BaseModel):
+    limit: int = Field(10, ge=1, le=100)
+    remember: bool = Field(True, description="Store this plan as the baseline, so the next one only reports what changed (notify).")
+
+
+class RadarRunArgs(BaseModel):
+    top: int = Field(3, ge=1, le=10, description="How many of the plan's first gaps to search.")
+    per_gap: int = Field(5, ge=1, le=20, description="Repositories per search.")
+    add: bool = Field(False, description="Register the repositories Darwin did not know as discoveries (channel radar).")
+    gap_ids: list[int] = Field(default_factory=list, description="Search these gaps instead of the plan's first ones.")
+
+
+class WatchAddArgs(BaseModel):
+    question: str = Field(..., min_length=3, max_length=500, description="The question to keep, e.g. «¿hay algo para leer PDFs escaneados?».")
+    note: str = Field("", max_length=1000)
+    target: str = Field("", max_length=60, description="App it is about, if any.")
+
+
+class WatchUpdateArgs(BaseModel):
+    id: int = Field(..., ge=1)
+    state: Literal["", "activa", "pausada"] = ""
+    delete: bool = False
+    clear_news: bool = Field(False, description="Mark the news as read.")
+
+
+class ProposalsArgs(BaseModel):
+    state: str = Field("", max_length=30)
+    target: str = Field("", max_length=60)
+    origin: str = Field("", max_length=30, description="luis, agent, agora, radar, tracker…")
+    query: str = Field("", max_length=200)
+    limit: int = Field(100, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
+class FiltersArgs(BaseModel):
+    action: Literal["list", "save", "delete"] = "list"
+    name: str = Field("", max_length=60)
+    filter: dict[str, Any] = Field(default_factory=dict, description="query, state, target, channel, kind, pinned, order (as darwin_find).")
+
+
+class PanelArgs(BaseModel):
+    app: str = Field("", max_length=60, description="App id.")
+    space: str = Field("", max_length=60, description="Or the Ágora space / Faustus project slug (research = the whole family).")
+    project: str = Field("", max_length=200, description="Or the Faustus project name.")
+    limit: int = Field(8, ge=1, le=30)
 
 
 class SourceArgs(BaseModel):
@@ -208,7 +261,43 @@ class SinceArgs(BaseModel):
 
 
 def _find(s: Services, a: FindArgs) -> dict[str, Any]:
-    return query.find(s.store, **a.model_dump())
+    args = a.model_dump()
+    saved = args.pop("saved")
+    if saved:
+        try:
+            args = views.apply_filter(s.store, saved, args)
+        except KeyError as exc:
+            raise DarwinError("not_found", str(exc), "List them with darwin_saved_filters.") from exc
+    return query.find(s.store, **args)
+
+
+def _coverage(s: Services, a: CoverageArgs) -> dict[str, Any]:
+    if not a.source_id and not a.text.strip():
+        raise DarwinError("invalid", "Give a source_id or a text.")
+    try:
+        return coverage.classify(s.store, source_id=a.source_id, text=a.text)
+    except KeyError as exc:
+        raise DarwinError("not_found", str(exc)) from exc
+
+
+def _watch_update(s: Services, a: WatchUpdateArgs) -> dict[str, Any]:
+    try:
+        return watches.set_state(s.store, a.id, state=a.state, delete=a.delete, clear_news=a.clear_news)
+    except KeyError as exc:
+        raise DarwinError("not_found", str(exc)) from exc
+
+
+def _filters(s: Services, a: FiltersArgs) -> dict[str, Any]:
+    try:
+        if a.action == "save":
+            return views.save_filter(s.store, a.name, a.filter)
+        if a.action == "delete":
+            return views.delete_filter(s.store, a.name)
+    except KeyError as exc:
+        raise DarwinError("not_found", str(exc)) from exc
+    except ValueError as exc:
+        raise DarwinError("invalid", str(exc)) from exc
+    return {"filters": views.saved_filters(s.store)}
 
 
 def _source(s: Services, a: SourceArgs) -> dict[str, Any]:
@@ -423,6 +512,38 @@ TOOLS: list[Tool] = [
                                        "URLs are taken as read; bare owner/name only when GitHub confirms the repository. An image is read once.",
                                        "ocr, capturas, fotos, pantallazos"),
          OcrArgs, ann(idempotent=True), lambda s, a: s.ocr_inbox(limit=a.limit), timeout_s=900),
+    Tool("darwin_coverage", _d("Does the family already do this? A discovery or a free text against the capability tree: covered, partial or gap, with the matching apps and nodes.",
+                               "covered needs half of the text's ideas (three or more) in one app's capabilities or tools, with live, tested or backed nodes. "
+                               "It explains, it never blocks.", "ya lo tenemos, cobertura, aptitud, encaja, cubre"),
+         CoverageArgs, ann(read_only=True), _coverage),
+    Tool("darwin_radar_plan", _d("The gap-driven radar: open gaps ranked by how much a search would help, each with its GitHub and web queries, the "
+                                 "discoveries Darwin already holds that may answer it and whether the tree may already cover it.",
+                                 "notify is false when nothing changed since the previous plan: a scheduled radar stays quiet then. Then run the "
+                                 "searches (or darwin_radar_run) and record findings with darwin_add.", "radar, qué buscar, plan del radar, carencias"),
+         RadarPlanArgs, ann(idempotent=True), lambda s, a: s.radar_plan(limit=a.limit, remember=a.remember), timeout_s=150),
+    Tool("darwin_radar_run", _d("Search GitHub for the plan's first gaps and report each repository as already known or new; add=true registers the new ones.",
+                                "Uses GitHub's public anonymous search (ten searches a minute). A failed search is reported and the rest go on.",
+                                "buscar repos para carencias, lanzar radar"),
+         RadarRunArgs, ann(idempotent=True), lambda s, a: s.radar_run(top=a.top, per_gap=a.per_gap, add=a.add, gap_ids=a.gap_ids or None),
+         timeout_s=240),
+    Tool("darwin_watch_add", _d("Keep a question («avísame cuando…»): Darwin asks it again every few hours and tells Luis only when the answer grows.",
+                                "The first check is the baseline; later ones report new discoveries, state changes and apps.",
+                                "avísame cuando, pregunta guardada, vigilar"), WatchAddArgs, ann(),
+         lambda s, a: watches.add(s.store, a.question, note=a.note, target=a.target)),
+    Tool("darwin_watches", _d("Saved questions with their last news."), Empty, ann(read_only=True), lambda s, a: watches.listing(s.store)),
+    Tool("darwin_watches_check", _d("Ask every saved question again now; notify is true when one has news (a family notification is sent)."),
+         Empty, ann(idempotent=True), lambda s, a: s.check_watches(), timeout_s=180),
+    Tool("darwin_watch_update", _d("Pause, resume or delete a saved question, or mark its news as read."), WatchUpdateArgs, ann(), _watch_update),
+    Tool("darwin_proposals", _d("Proposals (a discovery for an app) filtered by state, app, origin or words, newest change first, with counts per state.",
+                                synonyms="propuestas, qué se propuso, pendientes de decidir"), ProposalsArgs, ann(read_only=True),
+         lambda s, a: views.proposals(s.store, state=a.state, target=a.target, origin=a.origin, query_text=a.query, limit=a.limit, offset=a.offset)),
+    Tool("darwin_saved_filters", _d("List, save or delete named filters of the discovery history; darwin_find applies one with saved=<name>.",
+                                    synonyms="filtros guardados, vistas guardadas"), FiltersArgs, ann(idempotent=True), _filters),
+    Tool("darwin_panel", _d("What Darwin knows about one app (or the whole family): open discoveries worth a look, proposals by state, gaps, recent "
+                            "changes; the family view adds the radar's next searches. Faustus's project panel shows it.",
+                            "Resolves the app from its id, an Ágora space or a Faustus project name; research/ecosystem = the family.",
+                            "resumen de una app, panel, qué hay para este hoard"), PanelArgs, ann(read_only=True),
+         lambda s, a: views.panel(s.store, app=a.app, space=a.space, project=a.project, limit=a.limit), timeout_s=120),
     Tool("darwin_import_legacy", _d("Import (idempotently) the radar Markdown files, the tracker, the guide and the Ágora tasks that cite the radar."),
          ImportArgs, ann(idempotent=True), lambda s, a: s.import_legacy(**a.model_dump()), timeout_s=300),
 ]
