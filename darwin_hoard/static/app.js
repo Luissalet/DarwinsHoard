@@ -747,7 +747,7 @@ async function loadRadar() {
   $('rd-status').textContent = 'Calculando el plan…';
   try {
     const p = await api('/api/radar/plan?limit=15');
-    $('rd-status').textContent = `${p.open_gaps} carencias abiertas. ${p.summary}`;
+    $('rd-status').textContent = p.summary;
     $('rd-list').innerHTML = p.gaps.map(radarItem).join('') || '<div class="empty">No hay carencias abiertas. Apúntalas en Carencias.</div>';
     bindOpen($('rd-list'));
     $('rd-list').querySelectorAll('[data-rsearch]').forEach((b) => b.addEventListener('click', async () => {

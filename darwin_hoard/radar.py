@@ -166,17 +166,19 @@ def plan(store: Store, *, limit: int = 10, now: Optional[float] = None, remember
         store.set_meta("radar_planned_at", now)
     return {"generated": now, "open_gaps": len(rows), "gaps": ranked[:limit], "notify": notify,
             "novelty": {"new_gaps": new_gaps, "new_candidates": new_cands},
-            "summary": _summary(ranked, new_gaps, new_cands, notify)}
+            "summary": _summary(ranked, new_gaps, new_cands, notify, first=previous is None)}
 
 
-def _summary(ranked: list[dict[str, Any]], new_gaps: list[int], new_cands: list[int], notify: bool) -> str:
+def _summary(ranked: list[dict[str, Any]], new_gaps: list[int], new_cands: list[int], notify: bool, *, first: bool = False) -> str:
     if not ranked:
         return "No hay carencias abiertas: nada que buscar."
     if not notify:
         return "Sin novedades útiles desde el último plan."
     top = ranked[0]
-    return (f"{len(ranked)} carencias abiertas; la primera, «{top['title']}» (prioridad {top['priority']}). "
-            f"{len(new_gaps)} carencias nuevas y {len(new_cands)} candidatos nuevos desde el último plan.")
+    head = f"{len(ranked)} carencias abiertas; la primera, «{top['title']}» (prioridad {top['priority']})."
+    if first:
+        return head + " Es el primer plan que guarda el radar."
+    return head + f" {len(new_gaps)} carencias nuevas y {len(new_cands)} candidatos nuevos desde el último plan."
 
 
 def github_search(query: str, per_page: int = 5, timeout: float = 20.0) -> list[dict[str, Any]]:
