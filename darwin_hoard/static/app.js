@@ -44,8 +44,11 @@ function store(key, value) { try { if (value === undefined) return localStorage.
 
 // ------------------------------------------------------------------ navigation
 
-const VIEW_ALIASES = { resumen: 'overview', historial: 'history', bandeja: 'inbox', arbol: 'tree', 'árbol': 'tree', novedades: 'changes', carencias: 'gaps', trajes: 'suits', suits: 'suits' };
-const VIEWS = ['overview', 'history', 'inbox', 'tree', 'changes', 'gaps', 'suits'];
+const VIEW_ALIASES = { resumen: 'overview', historial: 'history', bandeja: 'inbox', arbol: 'tree', 'árbol': 'tree', novedades: 'changes', carencias: 'gaps', trajes: 'suits', suits: 'suits',
+  propuestas: 'proposals', investigaciones: 'research', radar: 'research' };
+const VIEWS = ['overview', 'history', 'proposals', 'inbox', 'tree', 'changes', 'gaps', 'research', 'suits', 'panel'];
+const PAGE = new URLSearchParams(location.search);
+const EMBED = PAGE.get('embed') === 'panel';
 
 function show(view) {
   view = VIEW_ALIASES[decodeURIComponent(view || '').toLowerCase()] || view;
@@ -53,8 +56,9 @@ function show(view) {
   state.view = view;
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
-  if (location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
-  ({ overview: loadOverview, history: loadHistory, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps, suits: loadSuits })[view]?.();
+  if (location.hash !== `#${view}`) history.replaceState(null, '', `${location.search}#${view}`);
+  ({ overview: loadOverview, history: loadHistory, proposals: loadProposals, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps,
+    research: loadResearch, suits: loadSuits, panel: loadPanel })[view]?.();
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.view)));
 window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v && v !== state.view) show(v); });
@@ -72,7 +76,7 @@ async function loadNames() {
   state.names.faustus = 'Faustus';
   const targets = await api('/api/targets');
   state.targets = targets.targets;
-  for (const sel of [$('f-target'), $('add-target'), $('gap-target')]) {
+  for (const sel of [$('f-target'), $('add-target'), $('gap-target'), $('p-target')]) {
     const keep = sel.value;
     sel.querySelectorAll('option:not(:first-child)').forEach((o) => o.remove());
     const ids = [...new Set([...targets.targets.map((t) => t.target), ...Object.keys(state.names)])].sort((a, b) => appName(a).localeCompare(appName(b)));
@@ -164,6 +168,43 @@ function fillStaticFilters() {
   for (const [id, v] of Object.entries(saved)) { const el = $(id); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
 }
 function saveFilters() { store('darwin.filters', JSON.stringify({ 'f-state': $('f-state').value, 'f-channel': $('f-channel').value, 'f-order': $('f-order').value, 'f-pinned': $('f-pinned').checked })); }
+for (const k of PROPOSAL_STATES) { const o = document.createElement('option'); o.value = k; o.textContent = STATE_LABEL[k]; $('p-state').appendChild(o); }
+for (const [k, l] of [['luis', 'Luis'], ['agent', 'Agente'], ['agora', 'Ágora'], ['radar', 'Radar'], ['tracker', 'Seguimiento'], ['guide', 'Guía']]) { const o = document.createElement('option'); o.value = k; o.textContent = l; $('p-origin').appendChild(o); }
+
+// saved filters (named, kept by Darwin so agents can use them with darwin_find saved=<name>)
+const FILTER_FIELDS = { query: 'f-q', state: 'f-state', target: 'f-target', channel: 'f-channel', order: 'f-order' };
+state.filters = {};
+async function loadSavedFilters() {
+  try {
+    const r = await api('/api/filters');
+    state.filters = r.filters || {};
+    const sel = $('f-saved'); const keep = sel.value;
+    sel.querySelectorAll('option:not(:first-child)').forEach((o) => o.remove());
+    for (const name of Object.keys(state.filters).sort()) { const o = document.createElement('option'); o.value = name; o.textContent = name; sel.appendChild(o); }
+    sel.value = state.filters[keep] ? keep : '';
+    $('f-delete').hidden = !sel.value;
+  } catch { /* optional */ }
+}
+$('f-saved').addEventListener('change', () => {
+  const f = state.filters[$('f-saved').value];
+  $('f-delete').hidden = !f;
+  if (!f) return;
+  for (const [k, id] of Object.entries(FILTER_FIELDS)) $(id).value = f[k] ?? (k === 'order' ? 'recent' : '');
+  $('f-pinned').checked = !!f.pinned;
+  state.page = 0; saveFilters(); loadHistory();
+});
+$('f-save').addEventListener('click', async () => {
+  const name = (prompt('Nombre del filtro', $('f-saved').value || '') || '').trim();
+  if (!name) return;
+  const spec = Object.fromEntries(Object.entries(FILTER_FIELDS).map(([k, id]) => [k, $(id).value]).filter(([k, v]) => v && !(k === 'order' && v === 'recent')));
+  if ($('f-pinned').checked) spec.pinned = true;
+  try { await api(`/api/filters/${encodeURIComponent(name)}`, { method: 'PUT', body: spec }); toast(`Filtro «${name}» guardado.`); await loadSavedFilters(); $('f-saved').value = name; $('f-delete').hidden = false; }
+  catch (e) { fail(e); }
+});
+$('f-delete').addEventListener('click', async () => {
+  const name = $('f-saved').value; if (!name) return;
+  try { await api(`/api/filters/${encodeURIComponent(name)}`, { method: 'DELETE' }); toast(`Filtro «${name}» borrado.`); $('f-saved').value = ''; loadSavedFilters(); } catch (e) { fail(e); }
+});
 
 let qTimer = 0;
 $('f-q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.page = 0; loadHistory(); }, 250); });
@@ -213,7 +254,8 @@ async function openDetail(id) {
       </dl>
       ${s.summary ? `<p class="t-sub" style="-webkit-line-clamp:unset">${esc(plain(s.summary))}</p>` : ''}
       ${g.fitness && g.fitness.score ? `<p class="meta">Puntuación ${g.fitness.score}/100: ${esc(g.fitness.reasons.join(' · '))}</p>` : ''}
-      ${meta.triage ? `<p class="meta">Triaje automático: ${meta.triage.app ? `propuesto para ${esc(appName(meta.triage.app))}` : (meta.triage.useful === false ? 'parece ruido' : 'ninguna app encaja')} — ${esc(meta.triage.reason || '')}</p>` : ''}
+      <div class="coverage"><button class="btn small" id="cov-btn" type="button" title="Compara sus palabras con el árbol de capacidades">¿Ya lo cubre alguna app?</button><div id="cov-out"></div></div>
+      ${meta.triage ? `<p class="meta">Triaje automático: ${meta.triage.app ? `propuesto para ${esc(appName(meta.triage.app))}` : (meta.triage.useful === false ? 'parece ruido' : 'ninguna app encaja')} — ${esc(meta.triage.reason || '')}${meta.triage.already_covered ? ` <span class="chip st-parcial" title="${esc(meta.triage.already_covered.join(', '))}">quizá ya cubierto</span>` : ''}</p>` : ''}
       <h4>Propuestas (${g.proposals.length})</h4>
       ${g.proposals.map((p) => `<div class="item"><div class="head">${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}${chip(p.state)}
           <span class="meta">${esc(CHANNEL_LABEL[p.origin] || p.origin || '')}${p.agora_task ? ` · Ágora ${esc(p.agora_space)} #${p.agora_task}` : ''}</span></div>
@@ -241,11 +283,24 @@ async function openDetail(id) {
       try { await call('darwin_set_state', { entity: 'proposals', id: pid, field: 'state', value: el.querySelector(`[data-pid="${pid}"]`).value, note: el.querySelector(`[data-note="${pid}"]`).value, by: 'luis' }); toast('Estado cambiado.'); openDetail(id); loadHistory(); }
       catch (e) { fail(e); }
     }));
+    $('cov-btn').addEventListener('click', async () => {
+      $('cov-out').innerHTML = '<span class="meta">Comparando con el árbol…</span>';
+      try { $('cov-out').innerHTML = coverageHtml(await call('darwin_coverage', { source_id: id })); } catch (e) { $('cov-out').innerHTML = ''; fail(e); }
+    });
     $('new-propose').addEventListener('click', async () => {
       const target = $('new-target').value; if (!target) return toast('Elige la app.', 'err');
       try { await call('darwin_propose', { source_id: id, target, reason: $('new-reason').value }); toast('Propuesta guardada.'); openDetail(id); loadHistory(); } catch (e) { fail(e); }
     });
   } catch (e) { fail(e); el.innerHTML = '<div class="empty">No se pudo cargar.</div>'; }
+}
+
+const COVERAGE = { covered: ['Ya cubierto', 'st-integrada'], partial: ['Cubierto en parte', 'st-parcial'], gap: ['Nadie lo hace', 'st-aplazada'], unknown: ['Sin datos para comparar', 'st-pendiente'] };
+function coverageHtml(r) {
+  const [label, cls] = COVERAGE[r.verdict] || [r.verdict, ''];
+  return `<div class="item"><div class="head"><span class="chip ${cls}">${label}</span><span class="meta">${esc(r.reason || '')}</span></div>
+    ${(r.apps || []).slice(0, 3).map((a) => `<div class="body">${appChip(a.app_id)} <span class="meta">${a.matched_groups}/${a.of} ideas${a.strong_evidence ? ', con nodos vivos o probados' : ', solo declarado'}</span>
+      ${a.nodes.slice(0, 4).map((n) => `<span class="chip" title="${esc(n.key)}">${n.level === 'tool' ? '🔧 ' : ''}${esc(n.name)}</span>`).join('')}</div>`).join('')}
+    <div class="meta">Palabras comparadas: ${esc((r.terms || []).join(', '))}</div></div>`;
 }
 
 function ancestry(d) {
@@ -502,7 +557,14 @@ fillStaticFilters();
 loadWaSettings();
 api('/api/inbox?limit=1').then((r) => { $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total; }).catch(() => {});
 call('darwin_gaps').then((r) => { const n = r.possibly_stale; $('gaps-badge').hidden = !n; $('gaps-badge').textContent = n; }).catch(() => {});
-loadNames().catch(fail).finally(() => { show((location.hash || '#overview').slice(1)); updateBadge(); });
+loadSavedFilters();
+if (EMBED) document.body.classList.add('embed');
+else api('/api/watches').then((r) => { $('research-badge').hidden = !r.with_news; $('research-badge').textContent = r.with_news; }).catch(() => {});
+loadNames().catch(fail).finally(() => {
+  if (PAGE.get('app')) { $('f-target').value = PAGE.get('app'); $('p-target').value = PAGE.get('app'); }
+  show(EMBED ? 'panel' : (location.hash || '#overview').slice(1)); updateBadge();
+  if (!EMBED && +PAGE.get('open')) { show('history'); openDetail(+PAGE.get('open')); }
+});
 if (!store('darwin.lastVisit')) store('darwin.lastVisit', String(Date.now() / 1000));
 
 
@@ -520,12 +582,14 @@ $('ask-form').addEventListener('submit', async (ev) => {
   out.innerHTML = '<p class="meta">Buscando en el árbol y el historial y preguntando al modelo local…</p>';
   try {
     const r = await call('darwin_ask', { question: q });
-    const apps = (r.apps || []).map((a) => appChip(a.app_id)).join(' ');
+    const apps = (r.apps || []).map((a) => `<div class="ask-path">${appChip(a.app_id)} <span class="meta">${esc((a.path || []).join(' › '))}${(a.matches || []).length ? ' · ' + esc(a.matches.slice(0, 4).join(', ')) : ''}</span></div>`).join('');
     const disc = (r.discoveries || []).slice(0, 8).map((d) => `<li><a href="#" data-open="${d.id}">#${d.id} ${esc(d.title || '')}</a> ${chip(d.state)}</li>`).join('');
     out.innerHTML = `${r.answer ? `<div class="ask-answer">${linkCites(r.answer).replace(/\n/g, '<br>')}</div>` : `<p class="meta">${esc(r.note || 'Sin respuesta del modelo.')}</p>`}
       ${apps ? `<div class="ask-row"><span class="meta">Apps que lo cubren:</span> ${apps}</div>` : ''}
       ${disc ? `<details class="ask-row"${r.answer ? '' : ' open'}><summary class="meta">Descubrimientos relacionados (${r.discoveries.length})</summary><ul>${disc}</ul></details>` : ''}
-      ${r.model ? `<div class="meta">Modelo: ${esc(r.model)}</div>` : ''}`;
+      ${r.model ? `<div class="meta">Modelo: ${esc(r.model)}</div>` : ''}
+      <div class="ask-row"><button class="btn small" id="ask-watch" type="button">Avísame cuando haya algo nuevo</button></div>`;
+    $('ask-watch').addEventListener('click', async () => { try { await call('darwin_watch_add', { question: q }); toast('Pregunta guardada en Investigaciones.'); } catch (e) { fail(e); } });
     out.querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('history'); openDetail(+a.dataset.open); }));
   } catch (e) { out.innerHTML = ''; fail(e); } finally { $('ask-go').disabled = false; }
 });
@@ -616,3 +680,166 @@ async function postsStatus() {
   } catch (e) { /* optional */ }
 }
 $('posts-read').addEventListener('click', async () => { try { await api('/api/posts', { method: 'POST' }); postsStatus(); } catch (e) { fail(e); } });
+
+
+// ------------------------------------------------------------------ proposals
+
+const ORIGIN_LABEL = { luis: 'Luis', agent: 'Agente', agora: 'Ágora', radar: 'Radar', 'radar-ideas': 'Radar (proyecto)', tracker: 'Seguimiento', guide: 'Guía', mention: 'Mención' };
+state.pPage = 0;
+let pTimer = 0;
+$('p-q').addEventListener('input', () => { clearTimeout(pTimer); pTimer = setTimeout(() => { state.pPage = 0; loadProposals(); }, 250); });
+for (const id of ['p-state', 'p-target', 'p-origin']) $(id).addEventListener('change', () => { state.pPage = 0; loadProposals(); });
+$('p-prev').addEventListener('click', () => { if (state.pPage > 0) { state.pPage--; loadProposals(); } });
+$('p-next').addEventListener('click', () => { state.pPage++; loadProposals(); });
+
+async function loadProposals() {
+  const size = 80;
+  const params = new URLSearchParams({ state: $('p-state').value, target: $('p-target').value, origin: $('p-origin').value, q: $('p-q').value, limit: size, offset: state.pPage * size });
+  try {
+    const r = await api(`/api/proposals?${params}`);
+    const pages = Math.max(1, Math.ceil(r.total / size));
+    $('p-count').textContent = `${r.total.toLocaleString('es-ES')} propuestas`;
+    $('p-info').textContent = `Página ${state.pPage + 1} de ${pages}`;
+    $('p-prev').disabled = state.pPage === 0; $('p-next').disabled = state.pPage + 1 >= pages;
+    bars($('p-counts'), PROPOSAL_STATES.filter((k) => r.counts[k]).map((k) => [k, r.counts[k], STATE_LABEL[k]]), (k) => { $('p-state').value = k; state.pPage = 0; loadProposals(); });
+    const tb = $('p-list').querySelector('tbody');
+    tb.innerHTML = r.items.map((p) => `<tr data-source="${p.source_id || ''}">
+      <td><div class="t-title">${esc(p.title || p.repo || ('#' + p.source_id))}</div><div class="t-sub">${p.radar_no ? 'radar #' + p.radar_no + ' · ' : ''}${esc(p.url || '')}</div></td>
+      <td>${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}</td>
+      <td><select data-pstate="${p.id}" aria-label="Estado">${PROPOSAL_STATES.map((k) => `<option value="${k}" ${k === p.state ? 'selected' : ''}>${STATE_LABEL[k]}</option>`).join('')}</select></td>
+      <td class="meta">${esc(ORIGIN_LABEL[(p.origin || '').split(':')[0]] || p.origin || '')}${p.agora_task ? ` · Ágora #${p.agora_task}` : ''}</td>
+      <td class="meta">${esc((p.reason || '').slice(0, 160))}</td><td class="meta">${when(p.updated)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
+    tb.querySelectorAll('[data-pstate]').forEach((sel) => {
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', async () => {
+        try { await call('darwin_set_state', { entity: 'proposals', id: +sel.dataset.pstate, field: 'state', value: sel.value, note: 'Desde la lista de propuestas', by: 'luis' }); toast('Estado cambiado.'); loadProposals(); }
+        catch (e) { fail(e); }
+      });
+    });
+    tb.querySelectorAll('tr[data-source]').forEach((tr) => tr.addEventListener('click', () => { if (tr.dataset.source) { show('history'); openDetail(+tr.dataset.source); } }));
+  } catch (e) { fail(e); }
+}
+
+
+// ------------------------------------------------------------------ research: gap-driven radar and saved questions
+
+const COV_SHORT = { covered: ['quizá ya cubierta', 'st-integrada'], partial: ['cubierta en parte', 'st-parcial'], gap: ['nadie lo hace', 'st-aplazada'], unknown: ['', ''] };
+function radarItem(g) {
+  const [cl, cc] = COV_SHORT[g.coverage] || ['', ''];
+  const gh = g.queries.github ? `https://github.com/search?type=repositories&q=${encodeURIComponent(g.queries.github)}` : '';
+  return `<div class="item"><div class="head"><span class="chip fit" title="${esc(g.reasons.join(' · '))}">${g.priority}</span><b>${esc(g.title)}</b>
+      ${g.target ? appChip(g.target) : ''}${cl ? `<span class="chip ${cc}" title="${esc((g.coverage_apps || []).join(', '))}">${cl}</span>` : ''}
+      <span class="meta">${g.last_searched ? 'buscada ' + when(g.last_searched) : 'nunca buscada'}</span></div>
+    <div class="body meta">${esc(g.reasons.join(' · '))}</div>
+    <div class="body">${gh ? `<a href="${gh}" target="_blank" rel="noopener" class="mono">${esc(g.queries.github)}</a> · ` : ''}<span class="mono">${esc(g.queries.web)}</span>
+      <button class="btn small" data-rsearch="${g.gap_id}" type="button">Buscar esta</button></div>
+    ${g.candidates.length ? `<div class="body">Ya en Darwin: ${g.candidates.map((c) => `<a href="#" data-open="${c.id}">#${c.id} ${esc(c.title || '')}</a>`).join(' · ')}</div>` : ''}
+    <div data-rresult="${g.gap_id}"></div></div>`;
+}
+function runResultHtml(res) {
+  return (res.results || []).map((r) => `<div class="body"><span class="meta">${esc(r.title)} — ${esc(r.query)}</span><ul class="plain">${r.repos.map((x) => `<li>${x.known ? '<span class="chip st-cubierta">ya estaba</span>' : '<span class="chip st-aceptada">nuevo</span>'}
+      ${x.source_id ? `<a href="#" data-open="${x.source_id}">${esc(x.full_name)}</a>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.full_name)}</a>`}
+      <span class="meta">★ ${x.stars}${x.license ? ' · ' + esc(x.license) : ''} · ${esc((x.description || '').slice(0, 140))}</span></li>`).join('') || '<li class="meta">Sin resultados.</li>'}</ul></div>`).join('')
+    + (res.errors || []).map((e) => `<div class="meta">Carencia ${e.gap_id}: ${esc(e.error)}</div>`).join('');
+}
+function bindOpen(el) { el.querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('history'); openDetail(+a.dataset.open); })); }
+async function loadRadar() {
+  $('rd-status').textContent = 'Calculando el plan…';
+  try {
+    const p = await api('/api/radar/plan?limit=15');
+    $('rd-status').textContent = `${p.open_gaps} carencias abiertas. ${p.summary}`;
+    $('rd-list').innerHTML = p.gaps.map(radarItem).join('') || '<div class="empty">No hay carencias abiertas. Apúntalas en Carencias.</div>';
+    bindOpen($('rd-list'));
+    $('rd-list').querySelectorAll('[data-rsearch]').forEach((b) => b.addEventListener('click', async () => {
+      const box = $('rd-list').querySelector(`[data-rresult="${b.dataset.rsearch}"]`); box.innerHTML = '<span class="meta">Buscando en GitHub…</span>';
+      try { const r = await api('/api/radar/run', { method: 'POST', body: { gap_ids: [+b.dataset.rsearch], add: $('rd-add').checked } }); box.innerHTML = runResultHtml(r); bindOpen(box); }
+      catch (e) { box.innerHTML = ''; fail(e); }
+    }));
+  } catch (e) { $('rd-status').textContent = ''; fail(e); }
+}
+$('rd-refresh').addEventListener('click', loadRadar);
+$('rd-run').addEventListener('click', async () => {
+  const b = $('rd-run'); b.disabled = true; $('rd-status').textContent = 'Buscando en GitHub las tres primeras carencias…';
+  try {
+    const r = await api('/api/radar/run', { method: 'POST', body: { top: 3, add: $('rd-add').checked } });
+    $('rd-status').textContent = r.summary + (r.added ? ` ${r.added} guardados como descubrimientos.` : '');
+    await loadRadar();
+    $('rd-status').textContent = r.summary + (r.added ? ` ${r.added} guardados como descubrimientos.` : '');
+    $('rd-list').insertAdjacentHTML('afterbegin', `<div class="card">${runResultHtml(r)}</div>`); bindOpen($('rd-list'));
+  } catch (e) { fail(e); } finally { b.disabled = false; }
+});
+
+function newsHtml(n) {
+  if (!n) return '';
+  return [n.discoveries?.length ? `Nuevos: ${n.discoveries.map((d) => `<a href="#" data-open="${d.id}">#${d.id} ${esc(d.title || '')}</a>`).join(' · ')}` : '',
+    n.state_changes?.length ? `Cambios: ${n.state_changes.map((c) => `#${c.id} ${esc(STATE_LABEL[c.from] || c.from)} → ${esc(STATE_LABEL[c.to] || c.to)}`).join(' · ')}` : '',
+    n.apps?.length ? `Apps: ${n.apps.map(appChip).join(' ')}` : ''].filter(Boolean).map((x) => `<div class="body">${x}</div>`).join('');
+}
+async function loadWatches() {
+  try {
+    const r = await api('/api/watches');
+    $('research-badge').hidden = !r.with_news; $('research-badge').textContent = r.with_news;
+    $('wt-list').innerHTML = r.watches.map((w) => `<div class="item"><div class="head"><b>${esc(w.question)}</b>${w.state === 'pausada' ? '<span class="chip">pausada</span>' : ''}
+        ${w.last_news ? `<span class="chip st-aceptada">novedades ${when(w.last_news_at)}</span>` : ''}<span class="meta">${w.last_checked ? 'comprobada ' + whenFull(w.last_checked) : ''}</span></div>
+      ${newsHtml(w.last_news)}
+      <div class="actions">${w.last_news ? `<button class="btn small" data-wread="${w.id}" type="button">Marcar como vistas</button>` : ''}
+        <button class="btn small ghost" data-wtoggle="${w.id}" data-st="${w.state === 'activa' ? 'pausada' : 'activa'}" type="button">${w.state === 'activa' ? 'Pausar' : 'Reanudar'}</button>
+        <button class="btn small ghost" data-wdel="${w.id}" type="button">Borrar</button></div></div>`).join('') || '<div class="empty">Ninguna pregunta guardada.</div>';
+    bindOpen($('wt-list'));
+    const upd = (id, body) => api(`/api/watches/${id}`, { method: 'PATCH', body }).then(loadWatches).catch(fail);
+    $('wt-list').querySelectorAll('[data-wread]').forEach((b) => b.addEventListener('click', () => upd(b.dataset.wread, { clear_news: true })));
+    $('wt-list').querySelectorAll('[data-wtoggle]').forEach((b) => b.addEventListener('click', () => upd(b.dataset.wtoggle, { state: b.dataset.st })));
+    $('wt-list').querySelectorAll('[data-wdel]').forEach((b) => b.addEventListener('click', () => api(`/api/watches/${b.dataset.wdel}`, { method: 'DELETE' }).then(loadWatches).catch(fail)));
+  } catch (e) { fail(e); }
+}
+$('wt-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const q = $('wt-q').value.trim(); if (q.length < 3) return;
+  try { await api('/api/watches', { method: 'POST', body: { question: q } }); $('wt-q').value = ''; toast('Pregunta guardada: avisará cuando haya algo nuevo.'); loadWatches(); } catch (e) { fail(e); }
+});
+$('wt-check').addEventListener('click', async () => {
+  try { const r = await api('/api/watches/check', { method: 'POST' }); toast(r.summary); loadWatches(); } catch (e) { fail(e); }
+});
+function loadResearch() { loadRadar(); loadWatches(); }
+
+
+// ------------------------------------------------------------------ panel shown inside Faustus (?embed=panel&space=…&project=…)
+
+async function loadPanel() {
+  const el = $('panel');
+  const q = new URLSearchParams({ app: PAGE.get('app') || '', space: PAGE.get('space') || '', project: PAGE.get('project') || '' });
+  el.innerHTML = '<div class="empty">Cargando lo que sabe Darwin…</div>';
+  try {
+    const p = await api(`/api/panel?${q}`);
+    const full = (extra) => `${location.origin}/${extra}`;
+    const scope = p.app ? `?app=${encodeURIComponent(p.app.app_id)}` : '';
+    const counts = Object.entries(p.proposals_by_state).sort((a, b) => b[1] - a[1]).map(([k, n]) => `${chip(k)} <b>${n}</b>`).join(' ') || '<span class="meta">Sin propuestas.</span>';
+    el.innerHTML = `<div class="panel-head"><h2>${p.app ? esc(p.app.name) : 'Toda la familia'}</h2>
+        <a class="btn small" href="${full(scope + '#history')}" target="_blank" rel="noopener">Abrir Darwin</a></div>
+      ${p.unresolved ? `<p class="hint">Darwin no reconoce «${esc(p.asked.project || p.asked.space || p.asked.app)}» como una app: se muestra la familia entera.</p>` : ''}
+      <div class="panel-row">${counts}</div>
+      <h4>Para mirar (${p.top.length} de ${p.discoveries_total})</h4>
+      ${p.top.map((i) => `<div class="item"><div class="head"><span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>
+        <a href="${full('?open=' + i.id + '#history')}" target="_blank" rel="noopener">${esc(i.title || i.repo)}</a>${chip(i.state)}</div>
+        ${i.summary ? `<div class="body meta">${esc(plain(i.summary).slice(0, 180))}</div>` : ''}</div>`).join('') || '<div class="empty">Nada abierto.</div>'}
+      <h4>Carencias (${p.gaps.length})</h4>
+      ${p.gaps.slice(0, 8).map((g) => `<div class="item"><b>${esc(g.title)}</b>${g.target && !p.app ? ` <span class="meta">${esc(g.target)}</span>` : ''}</div>`).join('') || '<div class="empty">Ninguna.</div>'}
+      ${p.radar ? `<h4>Siguientes búsquedas del radar</h4>${p.radar.map((g) => `<div class="item"><span class="chip fit">${g.priority}</span> ${esc(g.title)} <span class="mono meta">${esc(g.queries.github)}</span></div>`).join('')}` : ''}
+      <h4>Últimos cambios</h4>
+      ${p.recent_proposals.map((r) => `<div class="item">${chip(r.state)} <a href="${full('?open=' + r.source_id + '#history')}" target="_blank" rel="noopener">${esc(r.title || '#' + r.source_id)}</a>${r.target ? ` <span class="meta">${esc(r.target)}</span>` : ''} <span class="meta">${when(r.updated)}</span></div>`).join('') || '<div class="empty">Nada.</div>'}
+      ${p.watches_with_news.length ? `<h4>Preguntas con novedades</h4>${p.watches_with_news.map((w) => `<div class="item"><b>${esc(w.question)}</b>${newsHtml(w.last_news)}</div>`).join('')}` : ''}
+      <form class="inline-form" id="panel-ask" autocomplete="off"><input id="panel-q" maxlength="500" placeholder="Pregunta a Darwin${p.app ? ' sobre ' + esc(p.app.name) : ''}" aria-label="Pregunta"><button class="btn small" type="submit">Preguntar</button></form>
+      <div id="panel-ask-out"></div>`;
+    el.querySelectorAll('[data-open]').forEach((a) => { a.setAttribute('href', full('?open=' + a.dataset.open + '#history')); a.setAttribute('target', '_blank'); });
+    $('panel-ask').addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      const text = $('panel-q').value.trim(); if (text.length < 3) return;
+      $('panel-ask-out').innerHTML = '<p class="meta">Buscando…</p>';
+      try {
+        const r = await call('darwin_ask', { question: p.app ? `${text} ${p.app.name}` : text });
+        $('panel-ask-out').innerHTML = `${r.answer ? `<div class="ask-answer">${esc(r.answer).replace(/\n/g, '<br>')}</div>` : `<p class="meta">${esc(r.note || '')}</p>`}
+          <ul class="plain">${(r.discoveries || []).slice(0, 6).map((d) => `<li><a href="${full('?open=' + d.id + '#history')}" target="_blank" rel="noopener">#${d.id} ${esc(d.title || '')}</a> ${chip(d.state)}</li>`).join('')}</ul>`;
+      } catch (e) { $('panel-ask-out').innerHTML = ''; fail(e); }
+    });
+  } catch (e) { el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
+}

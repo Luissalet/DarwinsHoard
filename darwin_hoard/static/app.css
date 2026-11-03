@@ -138,3 +138,19 @@ ul.plain { list-style: none; margin: 0 0 6px; padding: 0; }
 ul.plain li { padding: 5px 0; border-bottom: 1px solid var(--hoard-border); }
 ul.plain li:last-child { border-bottom: 0; }
 table.list tr.sel td { background: var(--hoard-accent-soft); }
+
+/* proposals, research and the panel shown inside Faustus */
+.bars.compact { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 10px; }
+.bars.compact .bar { min-width: 180px; }
+#p-list select { max-width: 130px; }
+#view-research .card { margin-bottom: 14px; }
+#view-research .item .actions, #view-research .item .body { margin-top: 4px; }
+.ask-path { margin: 2px 0; }
+.coverage { margin: 8px 0; }
+body.embed header.top { display: none; }
+body.embed main { padding: 10px 12px; }
+.panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.panel-head h2 { margin: 0; }
+.panel-row { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#panel h4 { margin: 14px 0 6px; }
+#panel .item { padding: 6px 0; }

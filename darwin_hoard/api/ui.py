@@ -108,6 +108,73 @@ def gaps_reconcile(request: Request, body: Optional[dict[str, Any]] = None):
     return tool(request, "darwin_gaps_reconcile", body or {})
 
 
+@router.get("/api/coverage")
+def coverage_get(request: Request, source_id: Optional[int] = None, text: str = ""):
+    return tool(request, "darwin_coverage", {"source_id": source_id, "text": text})
+
+
+@router.get("/api/radar/plan")
+def radar_plan(request: Request, limit: int = 10, remember: bool = False):
+    """The page looks without moving the baseline (remember=false); a schedule calls the tool, which remembers."""
+    return tool(request, "darwin_radar_plan", {"limit": max(1, min(limit, 100)), "remember": remember})
+
+
+@router.post("/api/radar/run")
+def radar_run(request: Request, body: Optional[dict[str, Any]] = None):
+    return tool(request, "darwin_radar_run", body or {})
+
+
+@router.get("/api/watches")
+def watches_get(request: Request):
+    return tool(request, "darwin_watches")
+
+
+@router.post("/api/watches")
+def watches_add(request: Request, body: dict[str, Any]):
+    return tool(request, "darwin_watch_add", body)
+
+
+@router.post("/api/watches/check")
+def watches_check(request: Request):
+    return tool(request, "darwin_watches_check")
+
+
+@router.patch("/api/watches/{watch_id}")
+def watches_update(request: Request, watch_id: int, body: dict[str, Any]):
+    return tool(request, "darwin_watch_update", {**body, "id": watch_id})
+
+
+@router.delete("/api/watches/{watch_id}")
+def watches_delete(request: Request, watch_id: int):
+    return tool(request, "darwin_watch_update", {"id": watch_id, "delete": True})
+
+
+@router.get("/api/proposals")
+def proposals_get(request: Request, state: str = "", target: str = "", origin: str = "", q: str = "", limit: int = 100, offset: int = 0):
+    return tool(request, "darwin_proposals", {"state": state, "target": target, "origin": origin, "query": q,
+                                              "limit": max(1, min(limit, 500)), "offset": max(0, offset)})
+
+
+@router.get("/api/filters")
+def filters_get(request: Request):
+    return tool(request, "darwin_saved_filters", {"action": "list"})
+
+
+@router.put("/api/filters/{name}")
+def filters_put(request: Request, name: str, body: dict[str, Any]):
+    return tool(request, "darwin_saved_filters", {"action": "save", "name": name, "filter": body})
+
+
+@router.delete("/api/filters/{name}")
+def filters_delete(request: Request, name: str):
+    return tool(request, "darwin_saved_filters", {"action": "delete", "name": name})
+
+
+@router.get("/api/panel")
+def panel_get(request: Request, app: str = "", space: str = "", project: str = "", limit: int = 8):
+    return tool(request, "darwin_panel", {"app": app, "space": space, "project": project, "limit": max(1, min(limit, 30))})
+
+
 @router.get("/api/targets")
 def targets(request: Request):
     store = services(request).store

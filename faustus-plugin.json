@@ -17,7 +17,13 @@
     "gaps",
     "changes-since",
     "faustus-copilot",
-    "screenshot-ocr"
+    "screenshot-ocr",
+    "coverage-check",
+    "gap-driven-radar",
+    "saved-questions",
+    "proposals-list",
+    "saved-filters",
+    "faustus-project-panel"
   ],
   "x-family": {
     "copilot": true

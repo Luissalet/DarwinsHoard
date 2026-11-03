@@ -40,3 +40,24 @@ def test_model_down_stops_and_keeps_the_rest_pending(tmp_path):
     out = triage.run(store, lambda *a, **k: {"ok": False, "error": "no_model", "detail": ""})
     assert out["remaining"] == 1 and "no_model" in out["error"]
     assert len(triage.pending(store)) == 1
+
+
+def test_triage_tells_the_model_what_is_covered_and_flags_it(tmp_path):
+    store = _store(tmp_path)
+    with store.tx() as c:
+        c.execute("INSERT INTO capabilities(key, parent_key, level, name, app_id, detail, evidence, operation) VALUES (?,?,?,?,?,?,?,?)",
+                  ("cap:talos:ocr", "app:talos", "capability", "screenshot ocr text extraction", "talos", "", "viva", "disponible"))
+    sid = store.upsert_source(repo="x/shot-ocr", title="screenshot ocr text extraction")
+    seen = {}
+
+    def fake_chat(messages, **kw):
+        seen["prompt"] = messages[-1]["content"]
+        return {"ok": True, "json": {"app": "talos", "reason": "Mejor OCR.", "useful": True}, "model": "fake"}
+
+    out = triage.run(store, fake_chat)
+    assert "Cobertura: talos ya tiene screenshot ocr text extraction" in seen["prompt"]
+    assert out["proposed"][0]["reason"].startswith("Posiblemente ya cubierto en talos")
+    meta = store.source(sid)["meta"]["triage"]
+    assert meta["already_covered"] == ["cap:talos:ocr"] and meta["coverage"]["verdict"] == "covered"
+    prop = store.one("SELECT declared FROM proposals WHERE source_id=?", (sid,))
+    assert prop["declared"]["already_covered"] == ["cap:talos:ocr"]

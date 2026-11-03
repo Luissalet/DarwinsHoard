@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS suit_evaluations(
 CREATE TABLE IF NOT EXISTS gap_flags(
   gap_id INTEGER PRIMARY KEY REFERENCES gaps(id) ON DELETE CASCADE, status TEXT NOT NULL, capability_key TEXT, evidence TEXT, reason TEXT,
   matched TEXT, flagged REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS watches(
+  id INTEGER PRIMARY KEY, question TEXT NOT NULL, note TEXT, target TEXT, state TEXT NOT NULL DEFAULT 'activa',
+  seen TEXT, last_checked REAL, last_news TEXT, last_news_at REAL, created REAL, updated REAL);
 """
 
 #: SQL condition for the gaps that really are open: not resolved, and not flagged as possibly stale by the reconciliation.

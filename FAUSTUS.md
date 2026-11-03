@@ -31,6 +31,13 @@
 | Marcar una capacidad como implementada | `darwin_capability_mark` (exige prueba: commit, test o fichero de QA; sin ella se rechaza) |
 | Carencias que ya podrían estar resueltas | `darwin_gaps_reconcile` (marca «posiblemente obsoleta» con la prueba; confirmar/descartar lo decide una persona) |
 | Resultados de evaluar un traje en Pygmalion | `darwin_suit_import_eval` (JSON `pygmalion-suit-eval/1` o ruta del fichero) |
+| "Does an app already do this?" for a discovery or a text | `darwin_coverage` (covered / partial / gap with the matching apps and nodes; explains, never blocks) |
+| What the radar should look for next | `darwin_radar_plan` (gaps ranked, GitHub and web queries, candidates already held; `notify: false` = nothing new, stay quiet) |
+| Search GitHub for the top gaps | `darwin_radar_run` (`add: true` registers the new repositories; link collections are left out) |
+| «Avísame cuando…» | `darwin_watch_add`, `darwin_watches`, `darwin_watches_check` (notify only with news), `darwin_watch_update` |
+| Proposals across the family | `darwin_proposals` (state, app, origin, words) |
+| Named history filters | `darwin_saved_filters`, then `darwin_find` with `saved` |
+| What Darwin knows about one Hoard (or the family) | `darwin_panel` (`app`, `space` or `project`; what Faustus's project overview shows) |
 
 ## Rules
 
@@ -42,7 +49,7 @@
 
 ## What it cannot do (yet)
 
-- The radar through Darwin is written ([docs/RADAR.md](docs/RADAR.md)) but the scheduled task still has to be switched to it.
+- Run a schedule by itself: the gap-driven radar and the saved questions are tools (`darwin_radar_plan`, `darwin_radar_run`, `darwin_watches_check`) that a scheduled task calls; Darwin checks the saved questions on its own every four hours, but the daily radar task's instructions ([docs/RADAR.md](docs/RADAR.md)) are applied to that task by Luis.
 - Read WhatsApp history the bridge never received.
 
 ## Icono de familia (2026-11-02)
