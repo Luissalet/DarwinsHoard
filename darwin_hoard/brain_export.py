@@ -16,7 +16,7 @@ from typing import Any
 
 from . import fitness as fit
 from . import query
-from .store import Store
+from .store import OPEN_GAP_SQL, Store
 
 MARK = "generated_by: darwins-hoard"
 LIVE = {"integrada", "mixta", "parcial", "aceptada", "en_marcha", "pendiente", "investigando", "debatida", "aplazada"}
@@ -57,7 +57,7 @@ def export(store: Store, vault_owner_dir: Path) -> dict[str, Any]:
     app_note = lambda app: f"Darwin · {safe_name(names.get(app, app))}"  # noqa: E731
     found = query.find(store, limit=100000, with_fitness=True)["items"]
     live = [i for i in found if i["state"] in LIVE]
-    gaps = store.q("SELECT id, title, detail, target FROM gaps WHERE state='abierta' ORDER BY target, id")
+    gaps = store.q("SELECT id, title, detail, target FROM gaps WHERE " + OPEN_GAP_SQL + " ORDER BY target, id")
     written: set[str] = set()
     disc_note: dict[int, str] = {}
     for i in live:

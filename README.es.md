@@ -26,6 +26,8 @@ Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faust
 - **Puntuación**: cada hallazgo abierto tiene una nota de 0 a 100 con sus motivos (encaja con una carencia, reaparece, estrellas, licencia, novedad, es un repo concreto). Historial ordena por ella con «Más interesantes».
 - **Brain de Faustus**: Darwin escribe notas enlazadas en `Notes/Darwin/` del Brain (índice, una por app y una por hallazgo vivo) cada pocas horas o con `darwin_brain_export`; solo reescribe sus propias notas.
 - **Novedades**: lo nuevo desde la última visita, o del último día, semana o mes.
+- **Trajes**: la biblioteca de trajes, configuraciones de trabajo reutilizables para un tipo de encargo (objetivo, entradas con su identidad, conceptos del dominio, operaciones que usa, vistas, criterios de aceptación, receta y puntos donde hace falta juicio del modelo). Responde a «¿qué encargos sabes resolver?» con el estado de cada uno: `proposed` (propuesto), `partial` (respaldo parcial: faltan capacidades), `backed` (respaldado: toda operación necesaria existe en el árbol y está marcada como implementada **con prueba**) y `evaluated` (hay resultados importados de Pygmalion's Hoard). Un nombre de capacidad no basta: la prueba es un commit, un test o un fichero de QA (`darwin_capability_mark`; sin prueba se rechaza). Se siembran seis trajes de la propuesta 36 de la investigación; ninguno empieza respaldado.
+- **Carencias, conciliadas**: una carencia que el árbol actual ya responde (capacidad implementada con prueba) se marca «posiblemente obsoleta» con su prueba y deja de contarse como abierta, pero no se cierra sola: la confirmas o la descartas tú. `darwin_gaps_reconcile` recalcula las marcas (también tras cada marcado y cada refresco del árbol).
 - **Carencias**: lo que se quiere y ninguna app hace todavía. Se alimenta de los OBJETIVOS.md de cada Hoard que sean una lista; cuando un objetivo sale del fichero, su carencia se cierra.
 
 El botón **Añadir** acepta una URL, `owner/repo` o texto libre. Si el hallazgo ya existe, devuelve la ficha existente.
@@ -35,6 +37,10 @@ El botón **Añadir** acepta una URL, `owner/repo` o texto libre. Si el hallazgo
 captura → fuente → idea → propuesta (idea × app) → entrega (repo/commit/tarea del Ágora) → evidencia.
 
 Los estados de propuesta, implementación, verificación y operación van por separado. Lo declarado se guarda tal cual. La comprobación de commits añade `evidence.commit_ancestry` sin pisar lo declarado. Un commit en main es evidencia de código, no una prueba funcional. Todo cambio de estado queda en el historial.
+
+## Trajes: herramientas y rutas
+
+`darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_capability_mark`, `darwin_gaps_reconcile`, `darwin_suit_import_eval`. REST: `GET /api/suits`, `GET|PUT|DELETE /api/suits/{slug}`, `POST /api/suits/{slug}/evaluation`, `POST /api/evaluations`, `POST /api/capabilities/mark`, `GET /api/gaps`, `POST /api/gaps/reconcile`. Una evaluación se rechaza si no tiene ningún caso puntuado; los casos usados para construir la mejora llegan excluidos y se muestran aparte.
 
 ## Orígenes
 

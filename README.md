@@ -18,7 +18,29 @@ Port **5233**, id `darwin`, part of the Hoard family (Faustus copilot, Hoard Hub
 | **Novedades** | New discoveries, state changes and deliveries since the last visit (or the last day, week or month). |
 | **Carencias** | Things that are wanted and no app does yet, with the condition that would make them possible. The Hoards whose `OBJETIVOS.md` is a plain list feed it on every import (one gap per item, for that app); an item that leaves its file closes its gap. Long logs (Faustus's, Writer's) are skipped. |
 
+| **Carencias** (reconciled) | Gaps the capability tree now answers are shown apart as *possibly stale*, with the evidence, and are not counted as open. Nothing is closed automatically: you confirm (state *resuelta*) or dismiss each one. |
+| **Trajes** (suits) | The library of suits: reusable work configurations for a kind of engagement (objective, inputs and how each is identified, domain concepts, the operations used, views, acceptance criteria, recipe, points that need a model's judgement). A suit shows what engagements Darwin can solve and how far each is backed. See below. |
+
 The **Añadir** box in the header takes a URL, `owner/repo` or free text and returns the existing record when there is one.
+
+## Suits and backing
+
+A suit is a reusable work configuration for a kind of job. Each operation of a suit points to a node of the capability tree (`capability_key`); an operation with no key is a capability that does not exist yet and says why. Status of a suit, computed every time it is read:
+
+| Status | Meaning |
+|---|---|
+| `proposed` | none of the required operations is backed |
+| `partial` | some required operations are backed; others are missing from the tree or only declared |
+| `backed` | every required operation points to a node that exists in the tree **and** is marked implemented with evidence |
+| `evaluated` | an evaluation exported by Pygmalion's Hoard (`pygmalion-suit-eval/1`) was imported; the backing state at that moment is stored next to it, so *evaluated* never hides what was missing |
+
+A capability name proves nothing. A node counts as backed only after `darwin_capability_mark` with at least one evidence link: a `commit` (hash or `repo@hash`), a `test` (`file::name`) or a `qa_file` (path). Marking without evidence is refused; unmarking removes the proof and both are kept in the history. The proof lives apart from the tree, so a tree refresh does not lose it.
+
+Six suits from research proposal 36 are seeded once (repository intake, small migration, web 3D product model, part budget, contradictory documentation, data to product), pointing at nodes that plausibly cover each step and naming the missing ones. None starts backed.
+
+**Gap reconciliation.** A gap whose capability (explicit key, or the words of a backed capability or tool name found in its title and detail, for the same app) is backed with evidence is flagged *possibly stale* with that evidence. It stays `abierta` but is left out of the open count, the discovery score and the Brain notes. `darwin_gaps_reconcile` recomputes the flags (also after every mark and every tree refresh) and takes `confirm_ids` / `dismiss_ids` from a person.
+
+**Evaluation results.** `POST /api/evaluations` (or `darwin_suit_import_eval` with a JSON object or file path) takes the file Pygmalion's Hoard exports. It is refused unless it has at least one scored case; cases used to build an improvement arrive excluded and are listed.
 
 ## Data model
 
@@ -48,7 +70,9 @@ A source is identified by `repo:owner/name` (lower case; the GitHub id, when kno
 
 ## Tools (MCP and the page)
 
-`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_ask`, `darwin_triage`, `darwin_discuss`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_brain_export`, `darwin_import_links`, `darwin_import_legacy`.
+`darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_propose`, `darwin_set_state`, `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_gaps`, `darwin_gap_add`, `darwin_changes_since`, `darwin_inbox`, `darwin_ingest`, `darwin_verify_deliveries`, `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_ask`, `darwin_triage`, `darwin_discuss`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_brain_export`, `darwin_import_links`, `darwin_import_legacy`, and for suits and gaps `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_capability_mark`, `darwin_gaps_reconcile`, `darwin_suit_import_eval`.
+
+REST for the same: `GET /api/suits[?status=]`, `GET|PUT|DELETE /api/suits/{slug}`, `POST /api/suits/seed`, `POST /api/suits/{slug}/evaluation`, `POST /api/evaluations`, `POST /api/capabilities/mark`, `GET /api/gaps`, `POST /api/gaps/reconcile`.
 
 From PowerShell (scheduled agents, other apps): `darwin.ps1 <tool> -ArgsFile args.json` (UTF-8 JSON), `darwin.ps1 -List`. The radar's instructions through Darwin are in [docs/RADAR.md](docs/RADAR.md).
 

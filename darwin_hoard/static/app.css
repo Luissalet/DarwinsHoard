@@ -134,3 +134,7 @@ ul.tree ul { padding-left: 18px; border-left: 1px dashed var(--hoard-border); ma
 .acc-name { min-width: 90px; font-weight: 600; }
 
 .chip.fit { background: var(--hoard-accent-soft); color: var(--hoard-accent-strong); font-variant-numeric: tabular-nums; }
+ul.plain { list-style: none; margin: 0 0 6px; padding: 0; }
+ul.plain li { padding: 5px 0; border-bottom: 1px solid var(--hoard-border); }
+ul.plain li:last-child { border-bottom: 0; }
+table.list tr.sel td { background: var(--hoard-accent-soft); }

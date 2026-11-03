@@ -19,7 +19,7 @@ import re
 import time
 from typing import Any, Optional
 
-from .store import Store
+from .store import OPEN_GAP_SQL, Store
 from .tree import ALIASES, STOPWORDS, folded
 
 OPEN = {"sin_propuesta", "pendiente", "investigando", "debatida", "aceptada", "aplazada", "en_marcha", "mixta", "parcial"}
@@ -37,7 +37,7 @@ def stars_of(value: Any) -> int:
 
 def gap_terms(store: Store) -> list[dict[str, Any]]:
     out = []
-    for g in store.q("SELECT id, title, detail, target FROM gaps WHERE state='abierta'"):
+    for g in store.q("SELECT id, title, detail, target FROM gaps WHERE " + OPEN_GAP_SQL):
         words = {w for w in re.findall(r"[a-z0-9]+", folded(f"{g['title']} {g['detail'] or ''}")) if len(w) >= 4 and w not in STOPWORDS}
         for w in list(words):
             words.update(ALIASES.get(w, "").split())

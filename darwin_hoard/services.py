@@ -14,6 +14,7 @@ from . import __version__
 from .config import Config
 from .hoard_link.atomic import read_json, write_json_atomic
 from .hoard_link.tokens import read_or_create_token
+from . import reconcile, suit_seeds
 from .legacy import LegacyImporter
 from .store import Store
 from .tree import TreeBuilder
@@ -52,6 +53,7 @@ class Services:
         self.token = read_or_create_token(config.token_path)
         self.store = Store(config.db_path)
         self.store.recanonicalize()  # cheap; keeps old sources in step with canonical_url changes
+        suit_seeds.seed(self.store)  # the six suits of proposal 36, once
         self.settings_path = config.data_dir / "settings.json"
         self.settings = {**DEFAULT_SETTINGS, **(read_json(self.settings_path, default={}) or {})}
         self.importer = LegacyImporter(self.store)
@@ -109,7 +111,9 @@ class Services:
 
     def refresh_tree(self) -> dict[str, Any]:
         with self._tree_lock:
-            return self.tree_builder().refresh()
+            report = self.tree_builder().refresh()
+        reconcile.reconcile(self.store, by="tree")  # a changed tree can add or remove the proof a flag rests on
+        return report
 
     def import_legacy(self, *, inspiration_dir: str = "", radar_ideas: str = "", agora: bool = True) -> dict[str, Any]:
         return self.importer.import_all(inspiration_dir=Path(inspiration_dir or self.settings["inspiration_dir"]),

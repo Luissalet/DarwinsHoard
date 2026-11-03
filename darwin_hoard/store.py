@@ -76,7 +76,21 @@ CREATE TABLE IF NOT EXISTS history(
   at REAL NOT NULL, by TEXT, note TEXT);
 CREATE INDEX IF NOT EXISTS history_entity ON history(entity, entity_id);
 CREATE TABLE IF NOT EXISTS imports(id INTEGER PRIMARY KEY, name TEXT, file TEXT, sha256 TEXT, at REAL, counts TEXT);
+CREATE TABLE IF NOT EXISTS capability_backing(
+  capability_key TEXT PRIMARY KEY, evidence TEXT NOT NULL, note TEXT, by TEXT, created REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS suits(
+  id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL, objective TEXT, inputs TEXT, concepts TEXT, operations TEXT,
+  views TEXT, acceptance TEXT, recipe TEXT, judgement TEXT, origin TEXT, proposal TEXT, created REAL, updated REAL);
+CREATE TABLE IF NOT EXISTS suit_evaluations(
+  id INTEGER PRIMARY KEY, suit_id INTEGER NOT NULL REFERENCES suits(id) ON DELETE CASCADE, eval_id TEXT NOT NULL, payload TEXT NOT NULL,
+  sha256 TEXT, backing_at_import TEXT, imported REAL, UNIQUE(suit_id, eval_id));
+CREATE TABLE IF NOT EXISTS gap_flags(
+  gap_id INTEGER PRIMARY KEY REFERENCES gaps(id) ON DELETE CASCADE, status TEXT NOT NULL, capability_key TEXT, evidence TEXT, reason TEXT,
+  matched TEXT, flagged REAL, updated REAL);
 """
+
+#: SQL condition for the gaps that really are open: not resolved, and not flagged as possibly stale by the reconciliation.
+OPEN_GAP_SQL = "state='abierta' AND id NOT IN (SELECT gap_id FROM gap_flags WHERE status='possibly_stale')"
 
 _STATE_FIELDS = {
     ("proposals", "state"): PROPOSAL_STATES,
@@ -86,6 +100,7 @@ _STATE_FIELDS = {
     ("capabilities", "operation"): OPERATION_STATES,
     ("gaps", "state"): GAP_STATES,
 }
+GAP_FLAG_STATES = ("possibly_stale", "dismissed")
 
 
 def _j(value: Any) -> Optional[str]:
