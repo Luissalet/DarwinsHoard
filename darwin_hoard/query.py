@@ -23,20 +23,62 @@ ORDERS = {
 AGGREGATE_ORDER = ["integrada", "mixta", "parcial", "aceptada", "investigando", "debatida", "pendiente", "aplazada", "cubierta", "descartada", "sin_propuesta"]
 
 
+CLOSED_PROPOSAL_STATES = ("descartada", "cubierta")
+
+
+def _delivers(d: dict[str, Any], p: dict[str, Any], open_in_target: int) -> bool:
+    """Whether delivery ``d`` fulfils proposal ``p``. The finest identity both carry decides:
+
+    * a delivery linked to a proposal (``proposal_id``) fulfils that proposal only;
+    * otherwise a proposal without a target (a radar line that named no app) is fulfilled by any delivery;
+    * otherwise the target must match, and when both name a capability it must be the same one;
+    * a delivery that names no capability fulfils a capability-specific proposal only when that proposal is the only open
+      one for its target (two open capabilities of one app are never closed by one unnamed delivery)."""
+    if d.get("proposal_id") is not None and p.get("id") is not None:
+        return d["proposal_id"] == p["id"]
+    if not p.get("target"):
+        return True
+    if d.get("target") != p.get("target"):
+        return False
+    d_cap, p_cap = d.get("capability_key") or "", p.get("capability_key") or ""
+    if d_cap and p_cap:
+        return d_cap == p_cap
+    if p_cap and not d_cap:
+        return open_in_target <= 1
+    return True
+
+
 def _aggregate(proposals: list[dict[str, Any]], deliveries: list[Any]) -> str:
     """Aggregate state of a source, for display only.
 
-    * A proposal without a target (a radar line that named no app) only counts while no app-specific one exists.
-    * ``integrada`` only when every app it is still meant for (not discarded or covered) has an integrated delivery;
-      ``mixta`` when some do and others do not, so one delivery never makes the whole source look done."""
+    The unit is the proposal (an app, or an app's capability), not the app: two proposals for two capabilities of the
+    same app are two units, and an integrated delivery closes only the units it fulfils (see :func:`_delivers`).
+
+    * A proposal without a target only counts while no app-specific one exists.
+    * ``integrada`` only when every unit still meant to happen (not discarded or covered) has an integrated delivery;
+      ``mixta`` when some do and others are pending or partial, so one delivery never makes the whole source look done.
+    * ``parcial`` when nothing is integrated and some delivery is partial."""
     dels = [d if isinstance(d, dict) else {"implementation": d, "target": None} for d in deliveries]
     targeted = [p for p in proposals if p.get("target")]
-    proposal_states = [p["state"] for p in (targeted or proposals)]
-    done_targets = {d.get("target") for d in dels if d.get("implementation") == "integrada"}
-    if done_targets:
-        open_targets = {p["target"] for p in targeted if p["state"] not in ("descartada", "cubierta")}
-        return "mixta" if open_targets - done_targets else "integrada"
-    if any(d.get("implementation") == "parcial" for d in dels):
+    units = targeted or list(proposals)
+    proposal_states = [p["state"] for p in units]
+    open_units = [p for p in units if p["state"] not in CLOSED_PROPOSAL_STATES]
+    open_per_target: dict[Any, int] = {}
+    for p in open_units:
+        open_per_target[p.get("target")] = open_per_target.get(p.get("target"), 0) + 1
+    integrated = [d for d in dels if d.get("implementation") == "integrada"]
+    partial = [d for d in dels if d.get("implementation") == "parcial"]
+
+    def fulfils(d: dict[str, Any], p: dict[str, Any]) -> bool:
+        return _delivers(d, p, open_per_target.get(p.get("target"), 0))
+
+    done = [p for p in open_units if any(fulfils(d, p) for d in integrated)]
+    # an integrated delivery that fulfils no open proposal (an app nobody proposed, or one later discarded) still counts
+    # as something done: with open proposals left the source is «mixta», with none it is «integrada»
+    stray_done = [d for d in integrated if not any(fulfils(d, p) for p in open_units)]
+    if done or stray_done:
+        return "mixta" if len(done) < len(open_units) else "integrada"
+    if partial:
         return "parcial"
     for state in AGGREGATE_ORDER[3:-1]:
         if state in proposal_states:
@@ -107,8 +149,9 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
         args.append(radar_to)
     rows = store.q(f"SELECT s.* FROM sources s WHERE {' AND '.join(where)} ORDER BY {ORDERS.get(order, ORDERS['recent'])}", args)
     ids = [r["id"] for r in rows]
-    props = _by_source(store, "SELECT source_id, id, target, state, reason, origin, agora_space, agora_task FROM proposals", ids)
-    dels = _by_source(store, "SELECT source_id, id, target, implementation, verification, commit_sha, relation, evidence FROM deliveries", ids)
+    props = _by_source(store, "SELECT source_id, id, target, capability_key, state, reason, origin, agora_space, agora_task FROM proposals", ids)
+    dels = _by_source(store, "SELECT source_id, id, proposal_id, target, capability_key, implementation, verification, commit_sha, relation, "
+                             "evidence FROM deliveries", ids)
     items = []
     for r in rows:
         p, d = props.get(r["id"], []), dels.get(r["id"], [])
@@ -208,8 +251,8 @@ def overview(store: Store) -> dict[str, Any]:
     radar = store.one("SELECT COUNT(DISTINCT legacy_radar_no) AS n, MAX(legacy_radar_no) AS max FROM sources WHERE legacy_radar_no IS NOT NULL")
     agg: dict[str, int] = {}
     ids = [r["id"] for r in store.q("SELECT id FROM sources")]
-    props = _by_source(store, "SELECT source_id, target, state FROM proposals", ids)
-    dels = _by_source(store, "SELECT source_id, target, implementation FROM deliveries", ids)
+    props = _by_source(store, "SELECT source_id, id, target, capability_key, state FROM proposals", ids)
+    dels = _by_source(store, "SELECT source_id, proposal_id, target, capability_key, implementation FROM deliveries", ids)
     for sid in ids:
         a = _aggregate(props.get(sid, []), dels.get(sid, []))
         agg[a] = agg.get(a, 0) + 1
