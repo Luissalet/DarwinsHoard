@@ -1,11 +1,6 @@
 # Pendientes
 
-Limitaciones conocidas y cosas que dependen de la instalación:
+Solo lo que necesita una decisión o una acción de Luis.
 
-- **Conector de Faustus.** El pre-escaneo de seguridad de Faustus marca los ficheros vendorizados de Hoard Link (`browser_lane.py`, `family.py`, `_famsvc.py`) porque su lista de nombres de la familia no incluye «Hoard Hub» tras el renombrado. Mientras no se corrija en Faustus o se apruebe la excepción en Ajustes → Integraciones, Darwin funciona por el Hub y por su puente MCP.
-- **Radar programado.** Las instrucciones para que un radar programado registre todo en Darwin están en `docs/RADAR.md`; hay que aplicarlas a la tarea programada.
-- **Leer posts de X sin ventana.** La ventana de inicio de sesión de Links no admite «Continuar con Google» (Google rechaza navegadores controlados por una aplicación), así que la cuenta de X se conecta con usuario y contraseña de X. X puede limitar temporalmente ese inicio de sesión; mientras no haya sesión, los posts quedan pendientes sin marcarse y Darwin pide conectar la cuenta.
-- **Triaje automático.** Propone sin saber si la app ya usa esa herramienta (p. ej. puede proponer para Links algo que Links ya integra): las propuestas con origen *agent* se revisan a mano en Historial.
-- **Trajes sin respaldo.** Los seis trajes sembrados apuntan a nodos del árbol que probablemente cubren cada paso, pero ninguno tiene prueba registrada: hay que marcar con `darwin_capability_mark` las capacidades que de verdad funcionan (commit, test o QA) para que algún traje pase a «backed». Las operaciones sin capacidad (por ejemplo leer un repositorio a demanda, exportar un modelo 3D para web, comparar afirmaciones entre documentos) siguen siendo huecos.
-- **Conciliación de carencias por nombre.** Solo compara palabras del nombre de una capacidad con el texto de la carencia (con alias español-inglés) y exige la misma app; no entiende sinónimos fuera de esos alias. Las marcas son «posiblemente obsoletas» a propósito.
-- **Entregas sin prueba en main.** La comprobación de commits distingue las entregas cuyo commit no está en la rama principal, las que tienen un commit que no aparece y las de apps absorbidas sin repositorio propio; se revisan en Resumen → Entregas.
+- **Tarea programada del radar.** Darwin ya tiene el radar por carencias (`darwin_radar_plan`, `darwin_radar_run`) y las instrucciones nuevas para la tarea programada están en `docs/RADAR.md`. Cambiar esa tarea necesita tu permiso. Recomendación: aplicar `docs/RADAR.md` como instrucciones de la tarea «Radar diario de ideas para Faustus y los Hoards» y reactivarla; calla sola cuando no hay novedades (`notify: false`).
+- **Cuenta de X para leer posts.** Ninguna cuenta está conectada (X, Instagram, Threads…). Entra tú en X desde Resumen → Cuentas para leer posts → Conectar (usuario y contraseña de X: la ventana de Links no admite «Continuar con Google»). Hasta entonces los posts quedan sin leer, sin marcarse.
