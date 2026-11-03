@@ -150,3 +150,55 @@ def test_inbox_keeps_captures_without_source(tmp_path):
     assert box["total"] == 1 and box["items"][0]["text"] == "mira esto luego"
     assert query.find(store, channel="whatsapp")["total"] == 1
     store.close()
+
+
+def test_aggregate_is_per_capability_not_per_target(tmp_path):
+    """Two proposals for two capabilities of the same app: one integrated delivery for one of them is «mixta», not «integrada»."""
+    store = Store(tmp_path / "d.db")
+    sid = store.upsert_source(repo="c/d")
+    pa = store.upsert_proposal(key="c->faustus#a", source_id=sid, target="faustus", capability_key="cap:a", state="aceptada", origin="agora")
+    pb = store.upsert_proposal(key="c->faustus#b", source_id=sid, target="faustus", capability_key="cap:b", state="pendiente", origin="agora")
+    store.upsert_delivery(key="da", source_id=sid, target="faustus", capability_key="cap:a", commit_sha="abc1234",
+                          implementation="integrada", verification="documentada")
+    assert query.genealogy(store, source_id=sid)["state"] == "mixta"
+    assert query.find(store, query="c/d")["items"][0]["state"] == "mixta"
+    assert query.overview(store)["sources_by_state"].get("mixta") == 1
+    # b only partial: still not everything is done
+    store.upsert_delivery(key="db", source_id=sid, target="faustus", capability_key="cap:b", implementation="parcial")
+    assert query.genealogy(store, source_id=sid)["state"] == "mixta"
+    # b integrated too: now the whole source is
+    did = store.one("SELECT id FROM deliveries WHERE key='db'")["id"]
+    store.set_state("deliveries", did, "implementation", "integrada")
+    assert query.genealogy(store, source_id=sid)["state"] == "integrada"
+    assert pa != pb
+    store.close()
+
+
+def test_aggregate_matches_deliveries_by_proposal_and_never_closes_two_capabilities_with_one_unnamed_delivery(tmp_path):
+    store = Store(tmp_path / "d.db")
+    sid = store.upsert_source(repo="e/f")
+    pa = store.upsert_proposal(key="e->x#a", source_id=sid, target="x", capability_key="cap:a", state="aceptada", origin="agora")
+    store.upsert_proposal(key="e->x#b", source_id=sid, target="x", capability_key="cap:b", state="aceptada", origin="agora")
+    # a delivery for the app that names neither proposal nor capability cannot say which of the two it closed
+    store.upsert_delivery(key="dx", source_id=sid, target="x", commit_sha="1234567", implementation="integrada")
+    assert query.genealogy(store, source_id=sid)["state"] == "mixta"
+    # linked to proposal a: still only a
+    store.upsert_delivery(key="dx2", source_id=sid, target="x", proposal_id=pa, commit_sha="2345678", implementation="integrada")
+    assert query.genealogy(store, source_id=sid)["state"] == "mixta"
+    # once b is discarded, every open unit is done
+    pb = store.one("SELECT id FROM proposals WHERE key='e->x#b'")["id"]
+    store.set_state("proposals", pb, "state", "descartada")
+    assert query.genealogy(store, source_id=sid)["state"] == "integrada"
+    store.close()
+
+
+def test_aggregate_single_proposal_per_app_keeps_target_level_matching(tmp_path):
+    """The usual case (one proposal per app, deliveries that name only the app) is unchanged."""
+    store = Store(tmp_path / "d.db")
+    sid = store.upsert_source(repo="g/h")
+    store.upsert_proposal(key="g->x", source_id=sid, target="x", capability_key="cap:a", state="aceptada", origin="agora")
+    store.upsert_delivery(key="dg", source_id=sid, target="x", implementation="parcial")
+    assert query.genealogy(store, source_id=sid)["state"] == "parcial"
+    store.upsert_delivery(key="dg2", source_id=sid, target="x", commit_sha="3456789", implementation="integrada")
+    assert query.genealogy(store, source_id=sid)["state"] == "integrada"
+    store.close()
