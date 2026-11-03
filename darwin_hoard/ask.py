@@ -12,7 +12,7 @@ import re
 from typing import Any, Callable, Optional
 
 from . import query, tree
-from .store import Store
+from .store import OPEN_GAP_SQL, Store
 
 ChatFn = Callable[..., dict[str, Any]]
 
@@ -91,7 +91,7 @@ def ask(store: Store, question: str, chat: Optional[ChatFn] = None) -> dict[str,
     terms = terms_of(question)
     apps = tree.find(store, question, limit=6).get("apps", []) if terms else []
     found = discoveries_for(store, terms) if terms else []
-    gap_rows = store.q("SELECT id, title, target FROM gaps WHERE state='abierta'")
+    gap_rows = store.q("SELECT id, title, target FROM gaps WHERE " + OPEN_GAP_SQL)
     gaps = [g for g in gap_rows if any(t in tree.folded(g["title"]) for t in terms)]
     out: dict[str, Any] = {"question": question, "terms": terms, "apps": [{"app_id": a["app_id"], "path": a.get("path"),
                            "matches": [m["name"] for m in a["matches"][:6]]} for a in apps],

@@ -56,6 +56,58 @@ def cap_find(request: Request, q: str, limit: int = 15):
     return tool(request, "darwin_capability_find", {"query": q, "limit": max(1, min(limit, 60))})
 
 
+@router.get("/api/suits")
+def suits_list(request: Request, status: str = ""):
+    return tool(request, "darwin_suits", {"status": status})
+
+
+@router.get("/api/suits/{slug}")
+def suit_get(request: Request, slug: str):
+    return tool(request, "darwin_suit_get", {"slug": slug})
+
+
+@router.put("/api/suits/{slug}")
+def suit_put(request: Request, slug: str, body: dict[str, Any]):
+    return tool(request, "darwin_suit_save", {**body, "slug": slug})
+
+
+@router.delete("/api/suits/{slug}")
+def suit_delete(request: Request, slug: str):
+    return tool(request, "darwin_suit_delete", {"slug": slug})
+
+
+@router.post("/api/suits/seed")
+def suits_seed(request: Request):
+    return tool(request, "darwin_suits_seed")
+
+
+@router.post("/api/suits/{slug}/evaluation")
+def suit_evaluation(request: Request, slug: str, body: dict[str, Any]):
+    """Import an evaluation exported by Pygmalion's Hoard (``pygmalion-suit-eval/1``); the suit becomes «evaluated»."""
+    return tool(request, "darwin_suit_import_eval", {"result": body, "slug": slug})
+
+
+@router.post("/api/evaluations")
+def evaluation_import(request: Request, body: dict[str, Any]):
+    """Same, with the suit taken from the file; the endpoint Pygmalion's Hoard posts to."""
+    return tool(request, "darwin_suit_import_eval", {"result": body})
+
+
+@router.post("/api/capabilities/mark")
+def capability_mark(request: Request, body: dict[str, Any]):
+    return tool(request, "darwin_capability_mark", body)
+
+
+@router.get("/api/gaps")
+def gaps_get(request: Request):
+    return tool(request, "darwin_gaps")
+
+
+@router.post("/api/gaps/reconcile")
+def gaps_reconcile(request: Request, body: Optional[dict[str, Any]] = None):
+    return tool(request, "darwin_gaps_reconcile", body or {})
+
+
 @router.get("/api/targets")
 def targets(request: Request):
     store = services(request).store

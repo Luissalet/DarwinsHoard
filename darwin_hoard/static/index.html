@@ -18,7 +18,8 @@
       <button class="tab" data-view="inbox">Bandeja <span class="badge" id="inbox-badge" hidden></span></button>
       <button class="tab" data-view="tree">Árbol</button>
       <button class="tab" data-view="changes">Novedades <span class="badge" id="changes-badge" hidden></span></button>
-      <button class="tab" data-view="gaps">Carencias</button>
+      <button class="tab" data-view="gaps">Carencias <span class="badge" id="gaps-badge" hidden title="Posiblemente obsoletas"></span></button>
+      <button class="tab" data-view="suits" title="Suits">Trajes</button>
     </nav>
     <form class="quick-add" id="quick-add" autocomplete="off">
       <input id="add-text" placeholder="Añadir: URL, owner/repo o texto" aria-label="Añadir descubrimiento">
@@ -120,8 +121,30 @@
       <div class="grid2" id="changes"></div>
     </section>
 
+    <!-- Trajes -->
+    <section class="view" id="view-suits">
+      <div class="filters">
+        <h3 style="margin:0">¿Qué encargos sabes resolver? <span class="meta">What engagements can you solve?</span></h3>
+        <select id="su-status" aria-label="Estado del traje"><option value="">Cualquier estado</option>
+          <option value="proposed">Propuesto (proposed)</option><option value="partial">Respaldo parcial (partial)</option>
+          <option value="backed">Respaldado (backed)</option><option value="evaluated">Evaluado (evaluated)</option></select>
+        <span class="spacer"></span><span class="meta" id="su-count"></span>
+      </div>
+      <p class="hint" style="margin:0 0 10px">Un traje es una configuración de trabajo reutilizable para un tipo de encargo. «Respaldado» exige que cada operación necesaria exista en el árbol y tenga una prueba (commit, test o fichero de QA): un nombre de capacidad no basta. «Evaluado» significa que se importaron resultados de Pygmalion's Hoard.</p>
+      <div class="split">
+        <div class="list-wrap">
+          <table class="list" id="su-list">
+            <thead><tr><th>Traje</th><th>Estado</th><th class="num">Respaldo</th><th>Falta</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <aside class="detail" id="su-detail"><div class="empty">Elige un traje para ver sus operaciones, criterios de aceptación y qué le falta.</div></aside>
+      </div>
+    </section>
+
     <!-- Carencias -->
     <section class="view" id="view-gaps">
+      <div id="gaps-stale"></div>
       <form class="card gap-form" id="gap-form" autocomplete="off">
         <h3>Nueva carencia</h3>
         <input id="gap-title" placeholder="Qué quieres poder hacer y ninguna app hace" required minlength="3">

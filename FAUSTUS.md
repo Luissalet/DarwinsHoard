@@ -27,11 +27,17 @@
 | Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
+| «¿Qué encargos sabes resolver?» (trajes) | `darwin_suits` (estado: proposed, partial, backed, evaluated), `darwin_suit_get` (operaciones con su prueba), `darwin_suit_save`, `darwin_suits_seed` |
+| Marcar una capacidad como implementada | `darwin_capability_mark` (exige prueba: commit, test o fichero de QA; sin ella se rechaza) |
+| Carencias que ya podrían estar resueltas | `darwin_gaps_reconcile` (marca «posiblemente obsoleta» con la prueba; confirmar/descartar lo decide una persona) |
+| Resultados de evaluar un traje en Pygmalion | `darwin_suit_import_eval` (JSON `pygmalion-suit-eval/1` o ruta del fichero) |
 
 ## Rules
 
 - Never fold states: proposal, implementation, verification and operation are separate axes.
 - A declared delivery is not proof; `evidence.commit_ancestry = integrated` is code proof, not a functional test.
+- Un nombre de capacidad en el árbol no prueba que funcione: un traje solo está «backed» si cada operación necesaria existe y tiene prueba registrada.
+- Una carencia marcada «posiblemente obsoleta» sigue abierta hasta que alguien la confirme; no la cierres por tu cuenta sin comprobarla.
 - WhatsApp access is read only through Faustus's bridge; nothing is sent or marked as read.
 
 ## What it cannot do (yet)

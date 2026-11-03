@@ -6,7 +6,7 @@ import time
 from typing import Any, Optional
 
 from .canon import canonical_url, repo_key, source_key
-from .store import Store
+from .store import OPEN_GAP_SQL, Store
 
 ORDERS = {
     "recent": "s.last_seen DESC, s.id DESC",
@@ -185,6 +185,9 @@ def genealogy(store: Store, *, source_id: Optional[int] = None, key: str = "", r
 
 def overview(store: Store) -> dict[str, Any]:
     counts = store.counts()
+    counts["gaps_open"] = store.one("SELECT COUNT(*) AS n FROM gaps WHERE " + OPEN_GAP_SQL)["n"]
+    counts["gaps_possibly_stale"] = store.one("SELECT COUNT(*) AS n FROM gap_flags f JOIN gaps g ON g.id=f.gap_id WHERE f.status='possibly_stale' AND g.state='abierta'")["n"]
+    counts["suits"] = store.one("SELECT COUNT(*) AS n FROM suits")["n"]
     by_state = {r["state"]: r["n"] for r in store.q("SELECT state, COUNT(*) AS n FROM proposals WHERE target IS NOT NULL GROUP BY state")}
     untargeted = store.one("SELECT COUNT(*) AS n FROM proposals WHERE target IS NULL")["n"]
     by_impl = {r["implementation"]: r["n"] for r in store.q("SELECT implementation, COUNT(*) AS n FROM deliveries GROUP BY implementation")}

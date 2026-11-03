@@ -13,8 +13,12 @@ const CHANNEL_LABEL = { radar: 'Radar', 'radar-ideas': 'Radar (proyecto)', track
   whatsapp: 'WhatsApp', links: 'Links', talos: 'Captura', agent: 'Agente', manual: 'A mano' };
 const VERIF_LABEL = { documentada: 'documentada', probada: 'probada', recomprobar: 'recomprobar', desconocida: 'sin comprobar' };
 const RELATION_LABEL = { inspirado_por: 'inspirado por', codigo_de: 'código de', dependencia: 'dependencia', desconocida: 'relación sin precisar' };
+const SUIT_STATUS = { proposed: ['Propuesto', 'st-pendiente'], partial: ['Respaldo parcial', 'st-parcial'], backed: ['Respaldado', 'st-integrada'], evaluated: ['Evaluado', 'st-aceptada'] };
+const OP_STATE = { backed: ['con prueba', 'st-integrada'], unproven: ['existe, sin prueba', 'st-parcial'], missing: ['falta', 'st-aplazada'] };
+const EVID_LABEL = { commit: 'commit', test: 'test', qa_file: 'QA' };
+const evidenceHtml = (list) => (list || []).map((e) => `<span class="chip" title="${esc(e.note || '')}">${EVID_LABEL[e.kind] || esc(e.kind)}: <code>${esc(e.ref)}</code></span>`).join('');
 const LEVEL_LABEL = { root: 'raíz', hub: 'hub', app: 'hoard', module: 'módulo', capability: 'capacidad', tool: 'tool' };
-const state = { view: 'overview', page: 0, pageSize: 60, selected: null, names: {}, targets: [], treeSel: null };
+const state = { suit: null, view: 'overview', page: 0, pageSize: 60, selected: null, names: {}, targets: [], treeSel: null };
 
 async function api(path, opts = {}) {
   const init = { method: opts.method || 'GET', headers: {} };
@@ -40,8 +44,8 @@ function store(key, value) { try { if (value === undefined) return localStorage.
 
 // ------------------------------------------------------------------ navigation
 
-const VIEW_ALIASES = { resumen: 'overview', historial: 'history', bandeja: 'inbox', arbol: 'tree', 'árbol': 'tree', novedades: 'changes', carencias: 'gaps' };
-const VIEWS = ['overview', 'history', 'inbox', 'tree', 'changes', 'gaps'];
+const VIEW_ALIASES = { resumen: 'overview', historial: 'history', bandeja: 'inbox', arbol: 'tree', 'árbol': 'tree', novedades: 'changes', carencias: 'gaps', trajes: 'suits', suits: 'suits' };
+const VIEWS = ['overview', 'history', 'inbox', 'tree', 'changes', 'gaps', 'suits'];
 
 function show(view) {
   view = VIEW_ALIASES[decodeURIComponent(view || '').toLowerCase()] || view;
@@ -50,7 +54,7 @@ function show(view) {
   document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.view === view));
   document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === `view-${view}`));
   if (location.hash !== `#${view}`) history.replaceState(null, '', `#${view}`);
-  ({ overview: loadOverview, history: loadHistory, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps })[view]?.();
+  ({ overview: loadOverview, history: loadHistory, inbox: loadInbox, tree: loadTree, changes: loadChanges, gaps: loadGaps, suits: loadSuits })[view]?.();
 }
 document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => show(t.dataset.view)));
 window.addEventListener('hashchange', () => { const v = location.hash.slice(1); if (v && v !== state.view) show(v); });
@@ -344,6 +348,7 @@ async function selectNode(n) {
     el.innerHTML = `<div class="meta">${t.path.map((p) => esc(p.name)).join(' › ')}</div><h2>${esc(node.name)}</h2>
       <div><span class="chip">${LEVEL_LABEL[node.level]}</span><span class="chip op-${esc(node.operation)}">${esc(node.operation)}</span><span class="chip">evidencia ${esc(node.evidence)}</span></div>
       ${node.detail ? `<p>${esc(node.detail)}</p>` : ''}
+      ${node.backed ? `<p><span class="chip st-integrada">implementada, con prueba</span> ${evidenceHtml(node.backing_evidence)}</p>` : (['capability', 'tool'].includes(node.level) ? '<p class="hint">Sin prueba registrada: el nombre no demuestra que funcione.</p>' : '')}
       <dl class="kv"><dt>Visto desde</dt><dd>${whenFull(node.since)}</dd><dt>Última vez</dt><dd>${whenFull(node.seen)}</dd>${node.discoveries && Object.keys(node.discoveries).length ? `<dt>Propuestas</dt><dd>${Object.entries(node.discoveries).map(([k, v]) => `${esc(STATE_LABEL[k] || k)}: ${v}`).join(' · ')}</dd>` : ''}</dl>
       ${mods.length ? `<h4>Hoards y módulos (${mods.length})</h4>${mods.map((c) => `<span class="chip op-${esc(c.operation)}">${esc(c.name)}</span>`).join('')}` : ''}
       ${caps.length ? `<h4>Capacidades (${caps.length})</h4>${caps.map((c) => `<span class="chip" title="${esc(c.detail || '')}">${esc(c.name)}</span>`).join('')}` : ''}
@@ -411,14 +416,70 @@ async function updateBadge() {
 async function loadGaps() {
   try {
     const r = await call('darwin_gaps');
-    $('gaps').innerHTML = r.gaps.map((g) => `<div class="card"><div class="card-head"><h3 style="text-transform:none;font-size:15px;color:var(--hoard-text)">${esc(g.title)}</h3>${chip(g.state === 'abierta' ? 'pendiente' : 'integrada', g.state)}</div>
-      ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}<div class="meta">${g.target ? 'Para ' + esc(appName(g.target)) + ' · ' : ''}${whenFull(g.created)}${g.watch?.condition ? ' · Se podrá cuando: ' + esc(g.watch.condition) : ''}</div></div>`).join('') || '<div class="empty">No hay carencias apuntadas. Apunta aquí lo que quieres poder hacer y ninguna app hace: el radar buscará contra esto.</div>';
+    const stale = r.gaps.filter((g) => g.possibly_stale && g.state === 'abierta');
+    $('gaps-stale').innerHTML = stale.length ? `<div class="card"><div class="card-head"><h3>Posiblemente obsoletas (${stale.length})</h3>
+      <div class="actions"><button class="btn small" id="gaps-recheck" type="button">Reconciliar</button></div></div>
+      <p class="hint">El árbol marca como implementada, con prueba, una capacidad que estas carencias nombran. Siguen abiertas hasta que las confirmes; no cuentan como pendientes.</p>
+      ${stale.map((g) => `<div class="item"><div class="head"><b>${esc(g.title)}</b><span class="chip st-parcial">posiblemente obsoleta</span></div>
+        <div class="body">Capacidad: <code>${esc(g.possibly_stale.capability_name)}</code> ${evidenceHtml(g.possibly_stale.evidence)}</div>
+        <div class="actions"><button class="btn small" data-confirm="${g.id}" type="button">Confirmar: ya está resuelta</button><button class="btn small ghost" data-dismiss="${g.id}" type="button">No es lo mismo</button></div></div>`).join('')}</div>`
+      : `<p class="hint" style="margin:0 0 10px">${r.open} carencias abiertas. <button class="btn small ghost" id="gaps-recheck" type="button">Reconciliar con el árbol</button></p>`;
+    $('gaps-recheck')?.addEventListener('click', async () => { try { const x = await call('darwin_gaps_reconcile', { by: 'luis' }); toast(`${x.stale_count} posiblemente obsoletas, ${x.open} abiertas.`); loadGaps(); } catch (e) { fail(e); } });
+    document.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { confirm_ids: [+b.dataset.confirm], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
+    document.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { dismiss_ids: [+b.dataset.dismiss], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
+    $('gaps-badge').hidden = !stale.length; $('gaps-badge').textContent = stale.length;
+    $('gaps').innerHTML = r.gaps.filter((g) => !(g.possibly_stale && g.state === 'abierta')).map((g) => `<div class="card"><div class="card-head"><h3 style="text-transform:none;font-size:15px;color:var(--hoard-text)">${esc(g.title)}</h3>${chip(g.state === 'abierta' ? 'pendiente' : 'integrada', g.state)}</div>
+      ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}<div class="meta">${g.target ? 'Para ' + esc(appName(g.target)) + ' · ' : ''}${whenFull(g.created)}${g.watch?.condition ? ' · Se podrá cuando: ' + esc(g.watch.condition) : ''}</div></div>`).join('') || '<div class="empty">No hay carencias apuntadas. Apunta aquí lo que quieres poder hacer y ninguna app hace: el radar buscará contra esto.</div>'
   } catch (e) { fail(e); }
 }
 $('gap-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   try { await call('darwin_gap_add', { title: $('gap-title').value, detail: $('gap-detail').value, target: $('gap-target').value, watch: $('gap-watch').value }); ev.target.reset(); toast('Carencia guardada.'); loadGaps(); } catch (e) { fail(e); }
 });
+
+// ------------------------------------------------------------------ suits (trajes)
+
+async function loadSuits() {
+  try {
+    const r = await api(`/api/suits?status=${encodeURIComponent($('su-status').value)}`);
+    $('su-count').textContent = Object.entries(r.counts).map(([k, n]) => `${SUIT_STATUS[k][0]}: ${n}`).join(' · ');
+    $('su-list').querySelector('tbody').innerHTML = r.suits.map((s) => `<tr data-slug="${esc(s.slug)}" class="${state.suit === s.slug ? 'sel' : ''}"><td><b>${esc(s.name)}</b><div class="meta">${esc(s.slug)}</div></td>
+      <td>${chip(SUIT_STATUS[s.status][1].replace('st-', ''), SUIT_STATUS[s.status][0])}</td><td class="num">${s.backed}/${s.required}</td>
+      <td class="meta">${s.missing.length ? 'sin capacidad: ' + esc(s.missing.join(', ')) : ''}${s.unproven.length ? `${s.missing.length ? ' · ' : ''}sin prueba: ${esc(s.unproven.join(', '))}` : ''}</td></tr>`).join('')
+      || '<tr><td colspan="4" class="empty">No hay trajes con ese estado.</td></tr>';
+    $('su-list').querySelectorAll('tr[data-slug]').forEach((tr) => tr.addEventListener('click', () => openSuit(tr.dataset.slug)));
+  } catch (e) { fail(e); }
+}
+$('su-status').addEventListener('change', loadSuits);
+const list = (items, fn) => (items || []).length ? `<ul class="plain">${items.map((i) => `<li>${fn(i)}</li>`).join('')}</ul>` : '<p class="hint">—</p>';
+
+async function openSuit(slug) {
+  state.suit = slug;
+  document.querySelectorAll('#su-list tr[data-slug]').forEach((tr) => tr.classList.toggle('sel', tr.dataset.slug === slug));
+  const el = $('su-detail');
+  try {
+    const s = await api(`/api/suits/${encodeURIComponent(slug)}`);
+    const st = s.state;
+    const ev = s.evaluation;
+    const arms = ev?.payload?.aggregate || {};
+    el.innerHTML = `<h2>${esc(s.name)}</h2><div>${chip(SUIT_STATUS[s.status][1].replace('st-', ''), SUIT_STATUS[s.status][0])}<span class="chip">${st.backed}/${st.required} operaciones con prueba</span>${s.proposal || s.origin ? `<span class="chip">${esc(s.proposal || s.origin)}</span>` : ''}</div>
+      <p>${esc(s.objective)}</p>
+      <h4>Operaciones y herramientas</h4>
+      ${list(st.operations, (o) => `<b>${esc(o.name)}</b> ${chip(OP_STATE[o.state][1].replace('st-', ''), OP_STATE[o.state][0])}${o.required ? '' : ' <span class="meta">(opcional)</span>'}
+        ${o.node ? `<div class="meta">${esc(o.node.name)} · <code>${esc(o.capability_key)}</code> · ${esc(o.node.operation)}</div>` : (o.capability_key ? `<div class="meta">«${esc(o.capability_key)}» no está en el árbol</div>` : '')}
+        ${o.evidence?.length ? `<div>${evidenceHtml(o.evidence)}</div>` : ''}${o.missing_reason ? `<div class="meta">${esc(o.missing_reason)}</div>` : ''}${o.note ? `<div class="meta">${esc(o.note)}</div>` : ''}`)}
+      <h4>Entradas e identidad</h4>${list(s.inputs, (i) => `<b>${esc(i.name)}</b> <span class="meta">${esc(i.kind || '')} · identificada por: ${esc(i.identity || '—')}</span>`)}
+      <h4>Conceptos del dominio</h4>${list(s.concepts, (c) => `<b>${esc(c.term)}</b>: ${esc(c.meaning || '')}`)}
+      <h4>Vistas para inspeccionar</h4>${list(s.views, (v) => `<b>${esc(v.name)}</b>: ${esc(v.shows || '')}`)}
+      <h4>Criterios de aceptación</h4>${list(s.acceptance, (a) => `<b>${esc(a.id)}</b> <span class="chip">${a.kind === 'judge' ? 'juicio de modelo' : 'ejecutable'}</span> ${esc(a.check || '')}`)}
+      <h4>Receta de ejecución</h4>${list(s.recipe, (r) => `${esc(r.step)}${r.op ? ` <span class="meta">(${esc(r.op)})</span>` : ''}`)}
+      <h4>Dónde hace falta juicio del modelo</h4>${list(s.judgement, (j) => `<b>${esc(j.point)}</b> <span class="meta">${esc(j.why || '')}</span>`)}
+      <h4>Evaluación</h4>${ev ? `<p>Importada ${whenFull(ev.imported)} (${esc(ev.eval_id)}). Casos puntuados: ${ev.cases_scored}. Respaldo al importar: ${esc(ev.backing_at_import?.backing || '—')}${ev.backing_at_import?.missing?.length ? ' (faltaba: ' + esc(ev.backing_at_import.missing.join(', ')) + ')' : ''}.</p>
+        ${ev.excluded.length ? `<p class="meta">Excluidos de la puntuación por haberse usado para construir la mejora: ${esc(ev.excluded.map((e) => e.case).join(', '))}.</p>` : ''}
+        <div class="table-wrap"><table><thead><tr><th>Brazo</th><th class="num">Casos</th><th class="num">Éxito</th></tr></thead><tbody>${Object.entries(arms).map(([a, v]) => `<tr><td>${esc(a)}</td><td class="num">${v.cases}</td><td class="num">${v.success_rate == null ? '—' : (100 * v.success_rate).toFixed(0) + ' %'}</td></tr>`).join('')}</tbody></table></div>`
+        : '<p class="hint">Sin evaluación. Se define y se ejecuta en Pygmalion\'s Hoard y sus resultados se importan aquí.</p>'}`;
+  } catch (e) { fail(e); }
+}
 
 // ------------------------------------------------------------------ add
 
@@ -440,6 +501,7 @@ $('add-save').addEventListener('click', async (ev) => {
 fillStaticFilters();
 loadWaSettings();
 api('/api/inbox?limit=1').then((r) => { $('inbox-badge').hidden = !r.total; $('inbox-badge').textContent = r.total; }).catch(() => {});
+call('darwin_gaps').then((r) => { const n = r.possibly_stale; $('gaps-badge').hidden = !n; $('gaps-badge').textContent = n; }).catch(() => {});
 loadNames().catch(fail).finally(() => { show((location.hash || '#overview').slice(1)); updateBadge(); });
 if (!store('darwin.lastVisit')) store('darwin.lastVisit', String(Date.now() / 1000));
 

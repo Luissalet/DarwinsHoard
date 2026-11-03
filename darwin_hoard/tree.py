@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Optional
 
+from .backing import all_backing, is_backed
 from .store import Store, _j
 
 ROOT = "faustus"
@@ -246,6 +247,7 @@ def subtree(store: Store, root: str = ROOT, depth: int = 2, *, include_tools: bo
     if root not in by_key:
         return None
     discoveries = _discoveries_by_app(store)
+    proofs = all_backing(store)
     order = {"hub": 0, "module": 1, "app": 2, "capability": 3, "tool": 4}
 
     def build(node: dict[str, Any], d: int) -> dict[str, Any]:
@@ -253,6 +255,9 @@ def subtree(store: Store, root: str = ROOT, depth: int = 2, *, include_tools: bo
         out = dict(node)
         out["children_count"] = len(kids)
         out["tools_count"] = sum(1 for k in kids if k["level"] == "tool")
+        out["backed"] = is_backed(proofs.get(node["key"]))
+        if out["backed"]:
+            out["backing_evidence"] = proofs[node["key"]]["evidence"]
         if node["level"] in ("app", "module", "hub", "root"):
             out["discoveries"] = discoveries.get(node["app_id"], {})
         if d > 0:

@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import query, tree
+from . import backing, query, reconcile, suit_seeds, suits, tree
 from .canon import canonical_url, extract_refs, repo_of, source_key
 from .errors import DarwinError
 from .hoard_link.agentkit import Empty, Tool, ann
@@ -92,6 +92,59 @@ class GapArgs(BaseModel):
     target: str = Field("", max_length=60)
     capability: str = Field("", max_length=200)
     watch: str = Field("", max_length=500, description="What would make it solvable (a condition to re-check).")
+
+
+class SuitsArgs(BaseModel):
+    status: Literal["", "proposed", "partial", "backed", "evaluated"] = Field(
+        "", description="Only suits in this status. proposed: nothing backed; partial: some operations backed; backed: all required operations exist "
+                        "AND carry evidence; evaluated: results from Pygmalion imported.")
+
+
+class SuitRef(BaseModel):
+    slug: str = Field(..., min_length=3, max_length=64, description="Suit id, e.g. repository-intake.")
+
+
+class SuitSaveArgs(BaseModel):
+    slug: str = Field(..., min_length=3, max_length=64, description="Lower case letters, digits and hyphens.")
+    name: Optional[str] = Field(None, max_length=200)
+    objective: Optional[str] = Field(None, max_length=3000)
+    inputs: Optional[list[dict[str, Any]]] = Field(None, description="[{name, kind, identity}]: what comes in and how each input is identified.")
+    concepts: Optional[list[dict[str, Any]]] = Field(None, description="[{term, meaning}]: domain concepts.")
+    operations: Optional[list[dict[str, Any]]] = Field(
+        None, description="[{name, capability_key, required?, note?, missing_reason?}]: the operations, each pointing to a node of the capability tree "
+                          "(darwin_tree). Leave capability_key empty for a capability that does not exist yet and say why.")
+    views: Optional[list[dict[str, Any]]] = Field(None, description="[{name, shows}]: views to inspect while working.")
+    acceptance: Optional[list[dict[str, Any]]] = Field(None, description="[{id, check, kind: executable|judge, ...}]: acceptance criteria of the deliverable.")
+    recipe: Optional[list[dict[str, Any]]] = Field(None, description="[{step, op?}]: execution recipe.")
+    judgement: Optional[list[dict[str, Any]]] = Field(None, description="[{point, why}]: where a model has to judge.")
+    origin: Optional[str] = Field(None, max_length=300)
+    proposal: Optional[str] = Field(None, max_length=300, description="Research proposal this suit comes from.")
+
+
+class EvidenceItem(BaseModel):
+    kind: Literal["commit", "test", "qa_file"]
+    ref: str = Field(..., min_length=1, max_length=300, description="Commit hash (or repo@hash), test path (file::name) or QA file path.")
+    note: str = Field("", max_length=300)
+
+
+class MarkArgs(BaseModel):
+    key: str = Field(..., min_length=1, max_length=300, description="Capability node key (darwin_tree / darwin_capability_find).")
+    implemented: bool = Field(True, description="false removes the mark.")
+    evidence: list[EvidenceItem] = Field(default_factory=list, description="At least one link is required to mark a node implemented.")
+    note: str = Field("", max_length=1000)
+    by: str = Field("agent", max_length=60)
+
+
+class ReconcileArgs(BaseModel):
+    confirm_ids: list[int] = Field(default_factory=list, description="Gaps a person checked and confirms as resolved (state resuelta).")
+    dismiss_ids: list[int] = Field(default_factory=list, description="Flagged gaps that are NOT answered by the capability: keep open, do not flag again.")
+    by: str = Field("agent", max_length=60)
+
+
+class SuitEvalImportArgs(BaseModel):
+    result: Optional[dict[str, Any]] = Field(None, description="The evaluation exported by Pygmalion's Hoard (format pygmalion-suit-eval/1).")
+    path: str = Field("", max_length=1000, description="Or the path of the JSON file Pygmalion exported.")
+    slug: str = Field("", max_length=64, description="Suit to attach it to; default: the one named in the file.")
 
 
 class ImportArgs(BaseModel):
@@ -240,6 +293,43 @@ def _gap(s: Services, a: GapArgs) -> dict[str, Any]:
     return s.store.one("SELECT * FROM gaps WHERE id=?", (gid,))
 
 
+def _suit_save(s: Services, a: SuitSaveArgs) -> dict[str, Any]:
+    return suits.save_suit(s.store, a.model_dump(exclude_unset=True), by="agent")
+
+
+def _suit_import(s: Services, a: SuitEvalImportArgs) -> dict[str, Any]:
+    payload = a.result
+    if payload is None:
+        if not a.path:
+            raise DarwinError("invalid", "Give the evaluation as result or as path.")
+        import json
+        from pathlib import Path
+        try:
+            payload = json.loads(Path(a.path).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise DarwinError("invalid", f"Cannot read the evaluation file: {exc}") from exc
+    return suits.import_evaluation(s.store, payload, slug=a.slug)
+
+
+def _mark(s: Services, a: MarkArgs) -> dict[str, Any]:
+    out = backing.mark(s.store, a.key, implemented=a.implemented, evidence=[e.model_dump() for e in a.evidence] if a.implemented else None,
+                       note=a.note, by=a.by)
+    out["gaps"] = reconcile.reconcile(s.store, by=a.by)
+    return out
+
+
+def _gaps(s: Services, a: Empty) -> dict[str, Any]:
+    rec = reconcile.listing(s.store)
+    flags = {g["id"]: g for g in rec["possibly_stale"]}
+    gaps = s.store.q("SELECT * FROM gaps ORDER BY state, updated DESC")
+    for g in gaps:
+        if g["id"] in flags:
+            f = flags[g["id"]]
+            g["possibly_stale"] = {"capability_key": f["capability_key"], "capability_name": f["capability_name"], "evidence": f["evidence"],
+                                   "reason": f["reason"]}
+    return {"gaps": gaps, "open": rec["open"], "possibly_stale": rec["stale_count"]}
+
+
 TOOLS: list[Tool] = [
     Tool("darwin_overview", _d("Overview: how many discoveries, proposals per state, deliveries, captures per channel, apps with most proposals, last imports."),
          Empty, ann(read_only=True), lambda s, a: query.overview(s.store)),
@@ -260,8 +350,31 @@ TOOLS: list[Tool] = [
          lambda s, a: tree.find(s.store, a.query, a.limit, a.tools)),
     Tool("darwin_tree_refresh", _d("Rebuild the capability tree now from the hub, Faustus's tool catalogue and the manifests."),
          Empty, ann(idempotent=True), lambda s, a: s.refresh_tree(), timeout_s=120),
-    Tool("darwin_gaps", _d("Open gaps: things Luis wants that no app does yet."), Empty, ann(read_only=True),
-         lambda s, a: {"gaps": s.store.q("SELECT * FROM gaps ORDER BY state, updated DESC")}),
+    Tool("darwin_gaps", _d("Gaps: things Luis wants that no app does yet, with the ones the tree now answers flagged possibly_stale.",
+                           "«open» counts only gaps not flagged; a flagged gap shows the capability and its evidence."), Empty, ann(read_only=True), _gaps),
+    Tool("darwin_gaps_reconcile", _d("Flag gaps that a capability marked implemented with evidence now answers (possibly stale); list them.",
+                                     "Never closes a gap by itself. confirm_ids resolves gaps a person checked; dismiss_ids keeps a flagged gap open.",
+                                     "carencias obsoletas, reconciliar, ya está hecho, conciliar carencias"),
+         ReconcileArgs, ann(idempotent=True), lambda s, a: reconcile.reconcile(s.store, confirm_ids=a.confirm_ids, dismiss_ids=a.dismiss_ids, by=a.by)),
+    Tool("darwin_capability_mark", _d("Mark a capability node as implemented with evidence (commit, test or QA file); refused without evidence.",
+                                      "A capability name alone proves nothing. Evidence is what lets suits read «backed» and gaps read «possibly stale».",
+                                      "marcar implementada, aportar prueba, respaldo de una capacidad"), MarkArgs, ann(idempotent=True), _mark),
+    Tool("darwin_suits", _d("What engagements Darwin can solve: suits with status proposed / partial / backed / evaluated.",
+                            "A suit is a reusable work configuration for a kind of job. backed needs every required operation to exist in the tree with evidence.",
+                            "trajes, qué encargos sabes resolver, biblioteca de trajes, suits"), SuitsArgs, ann(read_only=True),
+         lambda s, a: suits.list_suits(s.store, a.status)),
+    Tool("darwin_suit_get", _d("One suit in full: objective, inputs, concepts, operations with their state, views, acceptance, recipe, judgement points.",
+                               "Each operation says backed, unproven (exists but no evidence) or missing; an evaluation shows its arms and excluded cases.",
+                               "ver un traje, detalle del traje"), SuitRef, ann(read_only=True), lambda s, a: suits.get_suit(s.store, a.slug)),
+    Tool("darwin_suit_save", _d("Create or update a suit by slug; only the fields given change.",
+                                "Operations reference capability nodes by key; an operation without key is declared missing.", "crear traje, editar traje, guardar traje"),
+         SuitSaveArgs, ann(idempotent=True), _suit_save),
+    Tool("darwin_suit_delete", _d("Delete a suit and its imported evaluations."), SuitRef, ann(), lambda s, a: suits.delete_suit(s.store, a.slug)),
+    Tool("darwin_suits_seed", _d("Insert the six suits of research proposal 36 that are not in the library yet (never overwrites)."),
+         Empty, ann(idempotent=True), lambda s, a: suit_seeds.seed(s.store)),
+    Tool("darwin_suit_import_eval", _d("Import a suit evaluation exported by Pygmalion's Hoard; the suit becomes evaluated.",
+                                       "Needs at least one scored case; cases used to build the improvement arrive excluded. The backing at import time is kept.",
+                                       "importar evaluación de un traje, resultados de Pygmalion"), SuitEvalImportArgs, ann(idempotent=True), _suit_import),
     Tool("darwin_gap_add", _d("Record a gap (something wanted that nothing does), optionally with the condition that would make it solvable."),
          GapArgs, ann(), _gap),
     Tool("darwin_changes_since", _d("What changed since a moment: new discoveries and captures, state changes, deliveries.",
