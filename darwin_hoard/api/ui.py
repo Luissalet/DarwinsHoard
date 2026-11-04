@@ -261,6 +261,17 @@ def deliveries_verify(request: Request):
     return services(request).verify_deliveries()
 
 
+@router.get("/api/repo-aliases")
+def repo_aliases_get(request: Request):
+    return services(request).repo_aliases()
+
+
+@router.post("/api/repo-aliases")
+def repo_aliases_set(request: Request, body: dict[str, Any]):
+    return services(request).set_repo_alias(str(body.get("name") or ""), repo=str(body.get("repo") or ""), path=str(body.get("path") or ""),
+                                            subdir=str(body.get("subdir") or ""), search=bool(body.get("search")), remove=bool(body.get("remove")))
+
+
 @router.get("/api/settings")
 def settings_get(request: Request):
     return services(request).settings

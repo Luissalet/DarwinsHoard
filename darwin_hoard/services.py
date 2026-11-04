@@ -35,17 +35,11 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "brain_export_minutes": 360,        # 0 = only on demand
     "watches_check_minutes": 240,       # saved questions («avísame cuando…»); 0 = only on demand
     "watches_notify": True,             # a family notification when a saved question has news
+    "repo_aliases": {},                 # old repository name → {"repo"|"path", "subdir", "search"}; adds to repo_map.BUILTIN_ALIASES
 }
 
 
-#: Names the Ágora used before repositories were renamed or merged, mapped to today's name in the hub's inventory.
-REPO_ALIASES = {"hoardlink": "Hoard Hub", "fielddex": "Hoard Dex", "taloshoard": "Talos's Hoard", "bloodarrows": "Blood Arrows",
-                "writershoard": "Writers hoard desktop", "gamerhoard": "Gamer Hoard", "cookhoard": "Cook Hoard", "homehoard": "Home Hoard"}
-
-
-def _repo_norm(name: str) -> str:
-    import re as _re
-    return _re.sub(r"[^a-z0-9]", "", str(name).lower().replace("'s", ""))
+#: Old repository names (renames, apps folded into others) live in ``repo_map.BUILTIN_ALIASES``.
 
 
 class Services:
@@ -127,41 +121,73 @@ class Services:
 
     # ------------------------------------------------------------------ ingestion (darwin_ingest, by Codex)
 
-    def repo_roots(self) -> dict[str, str]:
-        """Local repository of each delivery ``repo`` value: the hub's repository inventory (by name, with the old names
-        the Ágora still uses), the Ágora spaces' workspaces and Faustus. Keys are the exact ``repo`` values found."""
+    def repo_map(self) -> "RepoMap":
+        """The hub's repository inventory, the Ágora spaces' workspaces, Faustus and the aliases (built-in + settings)."""
+        from .repo_map import RepoMap
         from .tree import _get
-        known: dict[str, str] = {"faustus": str(self.config.faustus_dir)}
+        hub: dict[str, str] = {}
+        spaces: dict[str, str] = {}
         try:
             for rp in _get(f"{self.config.hub_url}/api/repos", timeout=30).get("repos", []):
                 if rp.get("name") and rp.get("path"):
-                    known[_repo_norm(rp["name"])] = rp["path"]
+                    hub[rp["name"]] = rp["path"]
         except Exception:  # noqa: BLE001
             log.info("hub repos not available")
-        for old, new in REPO_ALIASES.items():
-            if _repo_norm(new) in known:
-                known.setdefault(old, known[_repo_norm(new)])
-        roots = {"Faustus": str(self.config.faustus_dir), "faustus": str(self.config.faustus_dir)}
-        for row in self.store.q("SELECT DISTINCT repo FROM deliveries WHERE repo IS NOT NULL"):
-            path = known.get(_repo_norm(row["repo"]))
-            if path:
-                roots[row["repo"]] = path
         try:
             for sp in _get(f"{self.config.hub_url}/api/agora/spaces").get("spaces", []):
                 if sp.get("workspace"):
-                    roots.setdefault(sp["id"], sp["workspace"])
+                    spaces[sp["id"]] = sp["workspace"]
         except Exception:  # noqa: BLE001 - the hub may be down; Faustus alone still works
             log.info("hub not answering: verifying only Faustus deliveries")
-        # Only folders that are a repository themselves: a workspace like D:\LocalAI is not, and git would walk the
-        # whole tree on every call. A delivery whose repo is not here is reported as «repository_not_mapped».
-        return {k: v for k, v in roots.items() if (Path(v) / ".git").exists()}
+        return RepoMap(hub_repos=hub, faustus_dir=str(self.config.faustus_dir), spaces=spaces,
+                       custom=self.settings.get("repo_aliases") or {})
+
+    def repo_roots(self) -> dict[str, Any]:
+        """Local repository (and subfolder, for an app folded into another) of each delivery ``repo`` value, plus every
+        hub repository and Ágora space. A name found nowhere is reported as «repository_not_mapped»."""
+        names = [r["repo"] for r in self.store.q("SELECT DISTINCT repo FROM deliveries WHERE repo IS NOT NULL")]
+        return self.repo_map().roots(names)
+
+    def repo_aliases(self) -> dict[str, Any]:
+        counts = {r["repo"]: r["n"] for r in self.store.q("SELECT repo, COUNT(*) AS n FROM deliveries WHERE repo IS NOT NULL GROUP BY repo")}
+        rmap = self.repo_map()
+        names = sorted(counts)
+        unresolved = [n for n in names if rmap.resolve(n) is None]
+        return {"aliases": rmap.table(counts), "unresolved": [{"name": n, "deliveries": counts[n]} for n in unresolved],
+                "repositories": sorted(rmap.hub)}
+
+    def set_repo_alias(self, name: str, *, repo: str = "", path: str = "", subdir: str = "", search: bool = False,
+                       remove: bool = False) -> dict[str, Any]:
+        """Luis's own alias (saved in settings ``repo_aliases``); ``remove`` drops his entry (built-in ones come back)."""
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("name is required")
+        aliases = dict(self.settings.get("repo_aliases") or {})
+        if remove:
+            aliases.pop(name, None)
+        else:
+            if not (repo or path or search):
+                raise ValueError("give repo, path or search")
+            aliases[name] = {k: v for k, v in {"repo": repo.strip(), "path": path.strip(), "subdir": subdir.strip().strip("/\\"),
+                                               "search": bool(search)}.items() if v}
+        self.update_settings({"repo_aliases": aliases})
+        return self.repo_aliases()
+
+    def _agora_task(self, task_id: int) -> dict[str, Any] | None:
+        from .tree import _get
+        return _get(f"{self.config.hub_url}/api/agora/tasks/{int(task_id)}", timeout=20)
 
     def verify_deliveries(self) -> dict[str, Any]:
         from darwin_ingest import verify_deliveries
-        result = verify_deliveries(self.store, self.repo_roots())
+        result = verify_deliveries(self.store, self.repo_roots(), agora_lookup=self._agora_task)
         summary: dict[str, int] = {}
         for r in result["deliveries"]:
-            k = r["status"] if r["status"] != "unknown" else f"unknown:{r.get('reason', '')}"
+            if r["status"] == "unknown":
+                k = f"unknown:{r.get('reason', '')}"
+            elif r["status"] == "integrated" and r.get("via") not in (None, "direct"):
+                k = f"integrated:{r['via']}"
+            else:
+                k = r["status"]
             summary[k] = summary.get(k, 0) + 1
         self.store.set_meta("deliveries_verified_at", time.time())
         return {"summary": summary, "checked": len(result["deliveries"]), "verified_at": time.time()}

@@ -238,9 +238,11 @@ def overview(store: Store) -> dict[str, Any]:
     by_channel = {r["channel"]: r["n"] for r in store.q("SELECT channel, COUNT(*) AS n FROM captures GROUP BY channel")}
     by_ancestry = {}
     for r in store.q("SELECT COALESCE(json_extract(evidence, '$.commit_ancestry.status'), 'sin_comprobar') AS st, "
-                     "json_extract(evidence, '$.commit_ancestry.reason') AS why, COUNT(*) AS n FROM deliveries GROUP BY st, why"):
-        key = {"integrated": "en_main", "not_in_main": "fuera_de_main"}.get(r["st"]) or (
-            "commit_no_encontrado" if r["why"] == "commit_not_found" else "sin_comprobar")
+                     "json_extract(evidence, '$.commit_ancestry.reason') AS why, "
+                     "COALESCE(json_extract(evidence, '$.commit_ancestry.via'), 'direct') AS via, COUNT(*) AS n FROM deliveries GROUP BY st, why, via"):
+        key = ("en_main" if r["via"] in ("direct", "other_repository") else "equivalente") if r["st"] == "integrated" else (
+            {"not_in_main": "fuera_de_main", "imported": "importada"}.get(r["st"]) or (
+                "commit_no_encontrado" if r["why"] == "commit_not_found" else "sin_comprobar"))
         by_ancestry[key] = by_ancestry.get(key, 0) + r["n"]
     targets = store.q("SELECT target, COUNT(*) AS proposals, SUM(state IN ('aceptada','investigando')) AS active, "
                       "SUM(state='pendiente') AS pending FROM proposals WHERE target IS NOT NULL GROUP BY target ORDER BY proposals DESC")

@@ -23,7 +23,9 @@
     "saved-questions",
     "proposals-list",
     "saved-filters",
-    "faustus-project-panel"
+    "faustus-project-panel",
+    "delivery-equivalence",
+    "repository-alias-map"
   ],
   "x-family": {
     "copilot": true
