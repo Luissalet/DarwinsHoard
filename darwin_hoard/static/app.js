@@ -109,9 +109,9 @@ async function loadOverview() {
       (k) => { $('f-target').value = k; state.page = 0; show('history'); });
     bars($('ov-channels'), Object.entries(ov.captures_by_channel).sort((a, b) => b[1] - a[1]).map(([k, n]) => [k, n, CHANNEL_LABEL[k] || k]),
       (k) => { $('f-channel').value = k; state.page = 0; show('history'); });
-    const ANC = { en_main: 'Commit en main', fuera_de_main: 'Commit fuera de main', commit_no_encontrado: 'Commit no encontrado', sin_comprobar: 'Sin poder comprobar' };
+    const ANC = { en_main: 'Commit en main', equivalente: 'Equivalente en main (patch-id o Ágora)', importada: 'Importada sin historia', fuera_de_main: 'Commit fuera de main', commit_no_encontrado: 'Commit no encontrado', sin_comprobar: 'Sin poder comprobar' };
     const dv = [...Object.entries(ov.deliveries_by_implementation).map(([k, n]) => [k, n, `Declarada ${(STATE_LABEL[k] || k).toLowerCase()}`]),
-      ...['en_main', 'fuera_de_main', 'commit_no_encontrado', 'sin_comprobar'].filter((k) => ov.deliveries_by_ancestry?.[k]).map((k) => [`a:${k}`, ov.deliveries_by_ancestry[k], ANC[k]])];
+      ...['en_main', 'equivalente', 'importada', 'fuera_de_main', 'commit_no_encontrado', 'sin_comprobar'].filter((k) => ov.deliveries_by_ancestry?.[k]).map((k) => [`a:${k}`, ov.deliveries_by_ancestry[k], ANC[k]])];
     bars($('ov-deliveries'), dv);
     $('ov-deliveries').insertAdjacentHTML('beforeend', `<p class="hint">${ov.deliveries_verified_at ? `Commits comprobados contra la rama principal el ${whenFull(ov.deliveries_verified_at)}.` : 'Aún no se han comprobado los commits: pulsa «Comprobar entregas».'} Un commit en main es evidencia de código, no una prueba de que funcione.</p>`);
     $('ov-imports').innerHTML = ov.imports.length ? `<table><thead><tr><th>Qué</th><th>Fichero</th><th>Entradas</th><th>Nuevas</th><th>Cuándo</th></tr></thead><tbody>${ov.imports.map((i) => `<tr><td>${esc(CHANNEL_LABEL[i.name] || i.name)}</td><td class="mono" title="sha256 ${esc(i.sha256)}">${esc(i.file)}</td><td>${i.counts?.entries ?? ''}</td><td>${i.counts?.new_captures ?? ''}</td><td>${whenFull(i.at)}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">Todavía no se ha importado nada. Pulsa «Importar histórico».</div>';
@@ -126,8 +126,42 @@ $('btn-import').addEventListener('click', async () => {
 });
 $('btn-verify').addEventListener('click', async () => {
   const b = $('btn-verify'); b.disabled = true; b.textContent = 'Comprobando…';
-  try { const r = await call('darwin_verify_deliveries'); const s = r.summary; toast(`Entregas: ${s.integrated || 0} en main, ${s.not_in_main || 0} fuera de main, ${r.checked - (s.integrated || 0) - (s.not_in_main || 0)} sin poder comprobar.`); loadOverview(); }
+  try {
+    const r = await call('darwin_verify_deliveries'); const s = r.summary;
+    const sum = (pre) => Object.entries(s).filter(([k]) => k === pre || k.startsWith(`${pre}:`)).reduce((n, [, v]) => n + v, 0);
+    const direct = s.integrated || 0, eq = sum('integrated') - direct, imp = s.imported || 0, out = s.not_in_main || 0;
+    toast(`Entregas: ${direct} en main, ${eq} por equivalencia o por el Ágora, ${imp} importadas sin historia, ${out} fuera de main, ${r.checked - direct - eq - imp - out} sin poder comprobar.`);
+    loadOverview(); if (!$('repomap-table').hidden && $('repomap-table').innerHTML) loadRepoMap();
+  }
   catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Comprobar entregas'; }
+});
+async function loadRepoMap() {
+  try {
+    const r = await api('/api/repo-aliases');
+    const sel = $('rm-repo'), keep = sel.value;
+    sel.innerHTML = '<option value="">Repositorio de hoy…</option>' + r.repositories.map((n) => `<option>${esc(n)}</option>`).join('');
+    sel.value = keep;
+    $('repomap-unresolved').textContent = r.unresolved.length
+      ? `Sin resolver: ${r.unresolved.map((u) => `${u.name} (${u.deliveries})`).join(', ')}. Añade un alias abajo.`
+      : 'Todos los nombres de repositorio de las entregas se resuelven.';
+    const dest = (a) => a.search ? 'todos los repositorios' : `${esc(a.resolved_name || a.repo || a.space || a.path)}${a.subdir ? `/<span class="mono">${esc(a.subdir)}</span>` : ''}`;
+    $('repomap-table').innerHTML = `<table><thead><tr><th>Nombre antiguo</th><th>Hoy</th><th>Entregas</th><th>Origen</th><th></th></tr></thead><tbody>${r.aliases.map((a) => `<tr>
+      <td>${esc(a.name)}</td><td title="${esc(a.resolved_path)}">${a.ok ? '' : '⚠ '}${dest(a)}${a.source_commit ? ` <span class="meta">copiado de ${esc(a.source_commit.slice(0, 10))}</span>` : ''}</td>
+      <td>${a.deliveries || ''}</td><td class="meta">${a.origin === 'settings' ? 'tuyo' : 'integrado'}</td>
+      <td>${a.origin === 'settings' ? `<button class="btn" type="button" data-rm-del="${esc(a.name)}">Quitar</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
+  } catch (e) { fail(e); }
+}
+$('repomap-load').addEventListener('click', loadRepoMap);
+$('repomap-table').addEventListener('click', async (ev) => {
+  const name = ev.target.closest('[data-rm-del]')?.dataset.rmDel;
+  if (!name) return;
+  try { await call('darwin_repo_alias_set', { name, remove: true }); toast(`Alias «${name}» quitado.`); loadRepoMap(); } catch (e) { fail(e); }
+});
+$('repomap-form').addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const body = { name: $('rm-name').value.trim(), repo: $('rm-repo').value, subdir: $('rm-subdir').value.trim(), search: $('rm-search').checked };
+  try { await call('darwin_repo_alias_set', body); toast(`Alias «${body.name}» guardado. Pulsa «Comprobar entregas» para usarlo.`); $('repomap-form').reset(); loadRepoMap(); }
+  catch (e) { fail(e); }
 });
 async function loadWaSettings() {
   try {
@@ -306,8 +340,17 @@ function coverageHtml(r) {
 function ancestry(d) {
   const a = d.evidence?.commit_ancestry;
   if (!a) return '';
-  const label = { integrated: `en ${esc(a.branch)} (${esc((a.commit || '').slice(0, 10))})`, not_in_main: `no está en ${esc(a.branch)}`, unknown: esc(({ repository_not_mapped: 'repositorio sin mapear', commit_not_found: 'commit no encontrado', invalid_commit_id: 'sin id de commit', main_branch_not_found: 'sin rama principal', repository_unavailable: 'repositorio no disponible' })[a.reason] || a.reason || 'sin comprobar') }[a.status];
-  return `<div class="hist">Comprobación de commit: ${label}</div>`;
+  const sha = (x) => esc((x || '').slice(0, 10));
+  const VIA = { other_repository: `encontrado en ${esc(a.repository)}`, cherry_pick_trailer: `cherry-pick de ${sha(a.equivalent_of)} (lo dice el propio commit)`, patch_id: `equivalente de ${sha(a.equivalent_of)} (mismo patch-id)`,
+    subject_date: `equivalente de ${sha(a.equivalent_of)} (mismo asunto y fecha de autor)`, agora_resolution: `según la resolución de la tarea #${esc(a.agora_task)} del Ágora`,
+    agora_submission: `commits de la última entrega de la tarea #${esc(a.agora_task)}`, agora_task: `commits de la tarea #${esc(a.agora_task)}` };
+  const where = a.repository ? `${esc(a.repository)} · ` : '';
+  const imp = a.import || {};
+  const label = { integrated: `en ${where}${esc(a.branch)} (${sha(a.commit)})${a.via && VIA[a.via] ? ` — ${VIA[a.via]}` : ''}${a.commits ? ` · ${a.commits.length} commits` : ''}`,
+    imported: `código absorbido en ${esc(a.repository)}/${esc(imp.subdir)} el ${esc(imp.date)} (${sha(imp.commit)}) sin su historia${imp.source_commit ? `; origen ${sha(imp.source_commit)}` : ''}: el commit no se puede comprobar en local`,
+    not_in_main: `no está en ${where}${esc(a.branch)}`,
+    unknown: esc(({ repository_not_mapped: 'repositorio sin mapear', commit_not_found: 'commit no encontrado', invalid_commit_id: `id de commit no válido (${a.declared_commit || ''})`, no_commit_declared: 'no se declaró commit', main_branch_not_found: 'sin rama principal', repository_unavailable: 'repositorio no disponible', ancestry_failed: 'git no pudo comparar' })[a.reason] || a.reason || 'sin comprobar') }[a.status];
+  return `<div class="hist">Comprobación de commit: ${label}${a.agora_refs?.length && a.status === 'unknown' ? ` · tareas del Ágora ${a.agora_refs.map((n) => `#${n}`).join(', ')}` : ''}</div>`;
 }
 
 // ------------------------------------------------------------------ inbox

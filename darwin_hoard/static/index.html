@@ -62,6 +62,20 @@
         <div id="ov-imports" class="table-wrap"></div>
         <p class="hint" id="ov-missing"></p>
       </div>
+      <div class="card" id="repomap-card">
+        <div class="card-head"><h3>Mapa de repositorios</h3>
+          <div class="actions"><button class="btn" id="repomap-load" type="button">Ver mapa</button></div></div>
+        <p class="hint">Nombres antiguos de repositorio que usan las entregas y dónde vive hoy ese código (apps renombradas, fusionadas en otra como subcarpeta o movidas a E:). La comprobación de entregas mira aquí.</p>
+        <p class="meta" id="repomap-unresolved" role="status" aria-live="polite"></p>
+        <div id="repomap-table" class="table-wrap"></div>
+        <form id="repomap-form" class="repomap-form">
+          <input id="rm-name" placeholder="Nombre antiguo (p. ej. Galton's Hoard)" aria-label="Nombre antiguo" required>
+          <select id="rm-repo" aria-label="Repositorio de hoy"><option value="">Repositorio de hoy…</option></select>
+          <input id="rm-subdir" placeholder="Subcarpeta (si se fusionó)" aria-label="Subcarpeta">
+          <label class="meta"><input type="checkbox" id="rm-search"> buscar en todos</label>
+          <button class="btn primary" type="submit">Guardar alias</button>
+        </form>
+      </div>
     </section>
 
     <!-- Historial -->

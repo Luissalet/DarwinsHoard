@@ -85,7 +85,8 @@ def export(store: Store, vault_owner_dir: Path) -> dict[str, Any]:
             lines += ["", "## Entregas"]
             for d in dels:
                 anc = ((d.get("evidence") or {}).get("commit_ancestry") or {}) if isinstance(d.get("evidence"), dict) else {}
-                proof = {"integrated": "commit en main", "not_in_main": "commit fuera de main"}.get(anc.get("state"), "según documentos")
+                proof = {"integrated": "commit en main", "not_in_main": "commit fuera de main",
+                         "imported": "código absorbido en otra app sin su historia"}.get(anc.get("status") or anc.get("state"), "según documentos")
                 lines.append(f"- [[{app_note(d['target'])}]]: {d.get('implementation')} · {d.get('commit_sha') or 'sin commit'} · {proof}")
         if i.get("fitness_reasons"):
             lines += ["", "## Por qué interesa", *[f"- {plain(r)}" for r in i["fitness_reasons"]]]

@@ -73,3 +73,17 @@ def test_capability_find_ignores_stopwords(client):
     client.post("/api/tree/refresh")
     found = client.get("/api/capabilities/find", params={"q": "¿quién hace OCR?"}).json()
     assert found["terms"] == ["ocr"]
+
+
+def test_repo_alias_rest_and_tool(client, tmp_path):
+    r = client.get("/api/repo-aliases").json()
+    assert any(a["name"] == "Galton's Hoard" and a["subdir"] == "galton_hoard" and a["origin"] == "builtin" for a in r["aliases"])
+    folder = tmp_path / "old-repo"
+    (folder / ".git").mkdir(parents=True)
+    r = client.post("/api/repo-aliases", json={"name": "Some Old Hoard", "path": str(folder), "subdir": "pkg/"}).json()
+    row = next(a for a in r["aliases"] if a["name"] == "Some Old Hoard")
+    assert row["origin"] == "settings" and row["subdir"] == "pkg" and row["resolved_path"] == str(folder)
+    assert client.get("/api/settings").json()["repo_aliases"]["Some Old Hoard"]["path"] == str(folder)
+    r = client.post("/api/ui/call", json={"name": "darwin_repo_alias_set", "arguments": {"name": "Some Old Hoard", "remove": True}}).json()
+    assert all(a["name"] != "Some Old Hoard" for a in r["aliases"])
+    assert client.post("/api/repo-aliases", json={"name": "X"}).status_code == 400

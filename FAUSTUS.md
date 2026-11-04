@@ -16,7 +16,8 @@
 | Things nobody does yet | `darwin_gaps`, `darwin_gap_add` |
 | Notes with no link yet | `darwin_inbox` |
 | Bulk ingestion from another app | `darwin_ingest` |
-| Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch), `darwin_tree_refresh` |
+| Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch; `via` says the proof: direct, other_repository, cherry_pick_trailer, patch_id, subject_date, agora_*; `imported` for apps folded in without history), `darwin_tree_refresh` |
+| Where an old repository name lives today | `darwin_repo_aliases` (built-in + Luis's aliases, folded apps' subfolders, names nothing resolves), `darwin_repo_alias_set` |
 | WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor) |
 | A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
@@ -42,7 +43,7 @@
 ## Rules
 
 - Never fold states: proposal, implementation, verification and operation are separate axes.
-- A declared delivery is not proof; `evidence.commit_ancestry = integrated` is code proof, not a functional test.
+- A declared delivery is not proof; `evidence.commit_ancestry = integrated` is code proof, not a functional test. With `via` other than `direct` the proof is an equivalent commit (`equivalent_of` = the declared one) or what the Ágora task says reached main; `imported` means the declared commit cannot be checked locally.
 - Un nombre de capacidad en el árbol no prueba que funcione: un traje solo está «backed» si cada operación necesaria existe y tiene prueba registrada.
 - Una carencia marcada «posiblemente obsoleta» sigue abierta hasta que alguien la confirme; no la cierres por tu cuenta sin comprobarla.
 - WhatsApp access is read only through Faustus's bridge; nothing is sent or marked as read.

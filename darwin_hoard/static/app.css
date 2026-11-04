@@ -154,3 +154,5 @@ body.embed main { padding: 10px 12px; }
 .panel-row { margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 #panel h4 { margin: 14px 0 6px; }
 #panel .item { padding: 6px 0; }
+.repomap-form { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 10px; }
+.repomap-form input:not([type=checkbox]) { min-width: 220px; }

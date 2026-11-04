@@ -46,6 +46,18 @@ captura → fuente → idea → propuesta (idea × app) → entrega (repo/commit
 
 Los estados de propuesta, implementación, verificación y operación van por separado. Lo declarado se guarda tal cual. La comprobación de commits añade `evidence.commit_ancestry` sin pisar lo declarado. Un commit en main es evidencia de código, no una prueba funcional. Todo cambio de estado queda en el historial.
 
+## Comprobar entregas y mapa de repositorios
+
+**Comprobar entregas** (`darwin_verify_deliveries`, solo git local, sin fetch) prueba cada entrega por orden de fuerza y `via` dice cómo:
+
+- `direct`: el commit está en main del repositorio que nombra la entrega. Los nombres antiguos pasan por el **Mapa de repositorios** (Resumen; `darwin_repo_aliases`, `darwin_repo_alias_set`, `GET|POST /api/repo-aliases`): repos renombrados, el antiguo `D:\LocalAI` (se busca en todos), espacios del Ágora (Blood Arrows) y apps fusionadas en otra como subcarpeta (Galton → Pygmalion, Funes/Argus/Disk Hoard → Talos, Midas → Coase, Borges → Writer's, Tantalus/Phileas → Hermes, Babel/Theseus → Vitruvius, Gulliver → Vulcan, Laplace → Nightingale). Tus alias se guardan en el ajuste `repo_aliases` y mandan sobre los integrados.
+- `other_repository`: tarea de varios repos declarada con un solo nombre; el commit está en main de otro repo local.
+- `cherry_pick_trailer`: un commit de main dice «cherry picked from commit <id>».
+- `patch_id` / `subject_date`: el commit existe (otra rama, objeto huérfano tras reescribir la historia) y main tiene uno equivalente: mismo `git patch-id --stable`, o mismo asunto y fecha de autor. `equivalent_of` guarda el declarado.
+- `agora_resolution` / `agora_submission` / `agora_task`: el commit ya no existe y la tarea del Ágora dice qué llegó a main («Integrado en master (sha)», «viejo -> nuevo» tras un cherry-pick, la línea «Commits:» de la última entrega, los commits de la tarea) y eso está en main. Una línea del tracker sin commit («✅ hecho (#527)») usa las tareas que cita; si cita una sola, se apunta en la entrega.
+- `imported` (`history_not_imported`): el código llegó con una app fusionada sin su historia; se indica la carpeta, el commit que la añadió y el commit de origen de `provenance/`. El commit declarado no se puede comprobar en local y la implementación se queda como estaba declarada.
+- Si no, `not_in_main` o `unknown` con el motivo (`commit_not_found`, `no_commit_declared`, `invalid_commit_id`, `repository_not_mapped`, `repository_unavailable`).
+
 ## Trajes: herramientas y rutas
 
 `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_capability_mark`, `darwin_gaps_reconcile`, `darwin_suit_import_eval`. REST: `GET /api/suits`, `GET|PUT|DELETE /api/suits/{slug}`, `POST /api/suits/{slug}/evaluation`, `POST /api/evaluations`, `POST /api/capabilities/mark`, `GET /api/gaps`, `POST /api/gaps/reconcile`. Una evaluación se rechaza si no tiene ningún caso puntuado; los casos usados para construir la mejora llegan excluidos y se muestran aparte.

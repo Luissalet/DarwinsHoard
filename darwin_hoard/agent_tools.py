@@ -260,6 +260,15 @@ class SinceArgs(BaseModel):
     limit: int = Field(200, ge=1, le=1000)
 
 
+class RepoAliasArgs(BaseModel):
+    name: str = Field(..., min_length=1, max_length=200, description="Repository name as deliveries use it, e.g. «Galton's Hoard».")
+    repo: str = Field("", max_length=200, description="Today's repository name in the hub's inventory, e.g. «Pygmalion's Hoard».")
+    path: str = Field("", max_length=500, description="Or a local folder that is a git repository.")
+    subdir: str = Field("", max_length=300, description="Folder inside it where a folded app lives, e.g. galton_hoard.")
+    search: bool = Field(False, description="Old umbrella name: look for its commits in every repository.")
+    remove: bool = Field(False, description="Drop Luis's entry for this name (a built-in alias comes back).")
+
+
 def _find(s: Services, a: FindArgs) -> dict[str, Any]:
     args = a.model_dump()
     saved = args.pop("saved")
@@ -475,8 +484,21 @@ TOOLS: list[Tool] = [
     Tool("darwin_ingest", _d("Store captures from another app (Links, Talos OCR, a chat) idempotently by capture_key and link their URLs/repos."),
          IngestArgs, ann(idempotent=True), lambda s, a: s.ingest(a.records, a.channel)),
     Tool("darwin_verify_deliveries", _d("Check every delivery's commit against the main branch of its local repository (no fetch, no checkout).",
-                                        "A commit in main is code evidence, not a functional test."),
+                                        "A commit in main is code evidence, not a functional test. Old repository names go through the alias map; "
+                                        "a commit missing after a history rewrite is matched by patch-id or subject+author date (equivalent_of), "
+                                        "or by the commit the Ágora task says reached main; an app folded into another without its history "
+                                        "reads «imported». Summary keys: integrated, integrated:<via>, imported, not_in_main, unknown:<reason>.",
+                                        "comprobar entregas, commits en main, historia reescrita, equivalente"),
          Empty, ann(idempotent=True), lambda s, a: s.verify_deliveries(), timeout_s=600),
+    Tool("darwin_repo_aliases", _d("Where each repository name deliveries use lives today: built-in and Luis's aliases, the folder of apps "
+                                   "folded into others, and the names nothing resolves yet.",
+                                   synonyms="mapa de repositorios, alias de repos, repos renombrados, apps fusionadas"),
+         Empty, ann(read_only=True), lambda s, a: s.repo_aliases()),
+    Tool("darwin_repo_alias_set", _d("Save (or remove) an alias: an old repository name → today's repository (and subfolder of a folded app).",
+                                     "Saved in settings repo_aliases; it wins over the built-in alias for the same name. Run darwin_verify_deliveries after.",
+                                     "mapear repositorio, añadir alias, repo fusionado"),
+         RepoAliasArgs, ann(idempotent=True),
+         lambda s, a: s.set_repo_alias(a.name, repo=a.repo, path=a.path, subdir=a.subdir, search=a.search, remove=a.remove)),
     Tool("darwin_whatsapp_chats", _d("WhatsApp chats Faustus's bridge knows (to pick the Gittrend chat's exact JID)."),
          ChatsArgs, ann(read_only=True), lambda s, a: {"chats": s.whatsapp_chats(a.query)}),
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
