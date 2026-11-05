@@ -26,7 +26,7 @@ DEFAULT_SETTINGS: dict[str, Any] = {
     "whatsapp_chat": "",                 # exact JID of the «Gittrend» chat; empty = not synced
     "whatsapp_chat_name": "",            # its display name, for the page
     "whatsapp_sync_minutes": 0,      # 0 = only on demand
-    "inspiration_dir": r"D:\LocalAI\inspiration",
+    "inspiration_dir": r"E:\Development\IA\Research\inspiration",
     "radar_ideas": r"E:\Development\IA\Research\claude\radar-ideas.md",
     "faustus_url": "http://127.0.0.1:7000",
     "tree_refresh_minutes": 60,
