@@ -53,6 +53,47 @@ def media_path(media_dir: Path, raw: str) -> Optional[Path]:
     return path if path.is_file() else None
 
 
+TRUNCATED_GITHUB = re.compile(r"(?:https?://)?github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9_.-]{1,100}?)\s*(?:\.{2,}|…)")
+RepoList = Callable[[str], Optional[list[str]]]   # the repository names of an owner; None when unknown
+
+
+def github_owner_repos(owner: str, *, timeout: float = 8.0) -> Optional[list[str]]:
+    """Names of an owner's public repositories (first 300; users and organisations alike)."""
+    names: list[str] = []
+    for page in (1, 2, 3):
+        req = urllib.request.Request(f"https://api.github.com/users/{owner}/repos?per_page=100&page={page}&sort=updated",
+                                     headers={"Accept": "application/vnd.github+json", "User-Agent": "darwins-hoard"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                batch = json.loads(resp.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, ValueError):
+            return names or None
+        names += [str(r.get("name") or "") for r in batch if isinstance(r, dict)]
+        if len(batch) < 100:
+            break
+    return names
+
+
+def complete_truncated(text: str, repo_list: RepoList = github_owner_repos) -> tuple[str, list[str]]:
+    """Posts cut repository links short («github.com/addyosmani/age…»). Complete each one with the single repository of
+    that owner whose name starts that way; one that cannot be completed loses its «github.com/», so it is only taken as
+    a candidate that GitHub must confirm (and a cut name never is). Returns the text and the completions made."""
+    done: list[str] = []
+    cache: dict[str, Optional[list[str]]] = {}
+
+    def fix(match: re.Match) -> str:
+        owner, prefix = match.group(1), match.group(2).rstrip(".")
+        if owner not in cache:
+            cache[owner] = repo_list(owner)
+        names = [n for n in (cache[owner] or []) if n.lower().startswith(prefix.lower())]
+        if len(names) == 1:
+            done.append(f"{owner}/{names[0]}")
+            return f"https://github.com/{owner}/{names[0]} "
+        return f"{owner}/{prefix}… "
+
+    return TRUNCATED_GITHUB.sub(fix, text), done
+
+
 def github_repo_exists(repo: str, *, timeout: float = 6.0) -> Optional[bool]:
     req = urllib.request.Request(f"https://api.github.com/repos/{repo}", method="GET",
                                  headers={"Accept": "application/vnd.github+json", "User-Agent": "darwins-hoard"})
@@ -85,7 +126,8 @@ def pending(store: Store, *, limit: int = 60) -> list[dict[str, Any]]:
 
 
 def read_inbox(store: Store, media_dir: Path, ocr: OcrFn, *, repo_check: RepoCheck = github_repo_exists, limit: int = 60,
-               on_progress: Optional[Callable[[int, int], None]] = None) -> dict[str, Any]:
+               on_progress: Optional[Callable[[int, int], None]] = None,
+               repo_list: RepoList = github_owner_repos) -> dict[str, Any]:
     """Read up to ``limit`` unread screenshots. Stops at the first sign that the OCR engine is unavailable."""
     todo = pending(store, limit=limit)
     done = linked = missing = 0
@@ -106,7 +148,8 @@ def read_inbox(store: Store, media_dir: Path, ocr: OcrFn, *, repo_check: RepoChe
         text = str(res.get("text") or "")
         accepted, unverified = [], []
         checks = 0
-        for ref in extract_refs(text):
+        refs_text, completed = complete_truncated(text, repo_list)
+        for ref in extract_refs(refs_text):
             if ref["kind"] == "candidate":
                 repo = ref["raw"]
                 if repo not in cache:
@@ -125,7 +168,8 @@ def read_inbox(store: Store, media_dir: Path, ocr: OcrFn, *, repo_check: RepoChe
             store.link_capture(cap["id"], sid)
             accepted.append(ref["url"])
         store.set_capture_declared(cap["id"], "ocr", {"at": time.time(), "text": text[:4000], "refs": accepted,
-                                                       "unverified": unverified, "backend": res.get("backend") or ""})
+                                                       "unverified": unverified, "backend": res.get("backend") or "",
+                                                       "completed": completed})
         done += 1
         linked += 1 if accepted else 0
         found.extend(accepted)
