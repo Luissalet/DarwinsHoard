@@ -46,3 +46,22 @@ def test_site_comes_from_the_url_when_the_error_does_not_say(tmp_path):
     store.upsert_source(url="https://x.com/a/status/1")
     out = social.read_posts(store, lambda *a, **k: {"ok": False, "status": 502, "error": "X (Twitter) no dejó leer el post (HTTP ERROR 403)."})
     assert out["login_needed"] == "x" and len(social.pending(store)) == 1
+
+
+def test_a_site_asking_for_a_sign_in_does_not_stop_the_others(tmp_path):
+    store = Store(tmp_path / "d.db")
+    store.upsert_source(url="https://x.com/a/status/1")
+    store.upsert_source(url="https://x.com/b/status/2")
+    store.upsert_source(url="https://instagram.com/p/abc/")
+    asked = []
+
+    def call(app, tool, args, timeout=0):
+        asked.append(args["url"])
+        if "x.com" in args["url"]:
+            return {"ok": False, "error": "LOGIN_NEEDED", "result": {"code": "LOGIN_NEEDED", "site": "x"}}
+        return {"ok": True, "result": {"text": "a post", "site": "instagram", "links": []}}
+
+    out = social.read_posts(store, call)
+    assert out["read"] == 1 and out["remaining"] == 2
+    assert out["login_needed_sites"] == ["x"]
+    assert sum("x.com" in u for u in asked) == 1      # the second X post is not even tried
