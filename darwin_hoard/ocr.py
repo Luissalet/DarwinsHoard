@@ -55,6 +55,7 @@ def media_path(media_dir: Path, raw: str) -> Optional[Path]:
 
 TRUNCATED_GITHUB = re.compile(r"(?:https?://)?github\.com/([A-Za-z0-9-]{1,39})/([A-Za-z0-9_.-]{1,100}?)\s*(?:\.{2,}|…)")
 RepoList = Callable[[str], Optional[list[str]]]   # the repository names of an owner; None when unknown
+SPLIT_GITHUB = re.compile(r"github\s*[.,]\s*com\s*/\s*", re.IGNORECASE)
 
 
 def github_owner_repos(owner: str, *, timeout: float = 8.0) -> Optional[list[str]]:
@@ -80,6 +81,8 @@ def complete_truncated(text: str, repo_list: RepoList = github_owner_repos) -> t
     a candidate that GitHub must confirm (and a cut name never is). Returns the text and the completions made."""
     done: list[str] = []
     cache: dict[str, Optional[list[str]]] = {}
+    # Fast OCR engines split a link at its dots («github. com/ owner/repo»): join it back first.
+    text = SPLIT_GITHUB.sub("github.com/", text)
 
     def fix(match: re.Match) -> str:
         owner, prefix = match.group(1), match.group(2).rstrip(".")

@@ -24,3 +24,8 @@ def test_ambiguous_or_unknown_owner_is_not_a_link():
 def test_whole_links_are_left_alone():
     text, done = ocr.complete_truncated("see github.com/addyosmani/web-vitals today", lookup)
     assert text == "see github.com/addyosmani/web-vitals today" and done == []
+
+
+def test_links_split_by_the_ocr_are_joined():
+    text, _ = ocr.complete_truncated("see github. com/ attisvalentin/supacraft#readme", lookup)
+    assert "github.com/attisvalentin/supacraft" in text
