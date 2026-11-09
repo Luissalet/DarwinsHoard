@@ -8,7 +8,7 @@ import re
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from . import __version__
 from .config import Config
@@ -105,7 +105,7 @@ class Services:
     # ------------------------------------------------------------------ actions
 
     def tree_builder(self) -> TreeBuilder:
-        return TreeBuilder(self.store, hub_url=self.config.hub_url, faustus_url=self.settings["faustus_url"],
+        return TreeBuilder(self.store, hub_url=self.config.hub_url, faustus_url=self._faustus_base(),
                            hoards_root=self.config.hoards_root)
 
     def refresh_tree(self) -> dict[str, Any]:
@@ -192,11 +192,34 @@ class Services:
         self.store.set_meta("deliveries_verified_at", time.time())
         return {"summary": summary, "checked": len(result["deliveries"]), "verified_at": time.time()}
 
+    def _faustus_base(self) -> str:
+        """Where Faustus answers now: the Hub may have moved it to a Spark ("Run on"), and WhatsApp's session travels
+        with it, so the configured address on this PC would read a stopped copy. Asked of the Hub at most once a minute."""
+        import json as _json
+        import os
+        import urllib.request
+        configured = str(self.settings.get("faustus_url") or "http://127.0.0.1:7000").rstrip("/")
+        cache = getattr(self, "_placement_cache", None)
+        if cache and time.time() - cache[0] < 60:
+            return cache[1] or configured
+        moved = ""
+        hub = (os.environ.get("HOARD_HUB_URL") or "http://127.0.0.1:8810").rstrip("/")
+        try:
+            with urllib.request.urlopen(f"{hub}/api/placement", timeout=5) as r:
+                data = _json.loads(r.read().decode("utf-8"))
+            if data.get("location") == "sparks" and not (data.get("job") or {}).get("running"):
+                url = str((data.get("urls") or {}).get("faustus") or "")
+                moved = url.rstrip("/") if url.startswith(("http://", "https://")) else ""
+        except Exception:  # noqa: BLE001 - no Hub: the configured address
+            moved = ""
+        self._placement_cache = (time.time(), moved)
+        return moved or configured
+
     def _faustus_get(self, path: str, params: dict[str, Any]) -> Any:
         import json as _json
         import urllib.parse
         import urllib.request
-        url = f"{self.settings['faustus_url'].rstrip('/')}{path}?{urllib.parse.urlencode(params)}"
+        url = f"{self._faustus_base()}{path}?{urllib.parse.urlencode(params)}"
         try:
             with urllib.request.urlopen(url, timeout=30) as r:
                 return _json.loads(r.read().decode("utf-8"))
@@ -204,8 +227,51 @@ class Services:
             body = exc.read().decode("utf-8", "replace")[:300]
             raise RuntimeError(f"Faustus answered {exc.code}: {body}") from exc
 
+    def _faustus_post(self, path: str, body: Optional[dict[str, Any]] = None, timeout: float = 60) -> Any:
+        import json as _json
+        import urllib.request
+        url = f"{self._faustus_base()}{path}"
+        req = urllib.request.Request(url, data=_json.dumps(body or {}).encode("utf-8"), method="POST",
+                                     headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return _json.loads(r.read().decode("utf-8") or "{}")
+        except urllib.error.HTTPError as exc:  # type: ignore[attr-defined]
+            body_text = exc.read().decode("utf-8", "replace")[:300]
+            raise RuntimeError(f"Faustus answered {exc.code}: {body_text}") from exc
+
+    @staticmethod
+    def _bridge_down(exc: Exception) -> bool:
+        text = str(exc).lower()
+        return "whatsapp bridge" in text and "not running" in text
+
+    def _start_whatsapp_bridge(self, wait_s: float = 45.0) -> dict[str, Any]:
+        """Start Faustus's WhatsApp bridge and wait until it is connected (and done catching up, when it says so)."""
+        started = self._faustus_post("/api/whatsapp/start", {}, timeout=60)
+        status: dict[str, Any] = {}
+        deadline = time.time() + wait_s
+        while time.time() < deadline:
+            try:
+                status = self._faustus_get("/api/whatsapp/status", {})
+            except Exception:  # noqa: BLE001
+                status = {}
+            sync = status.get("sync") or {}
+            if status.get("status") == "connected" and not sync.get("active"):
+                break
+            if status.get("status") in ("qr", "logged_out"):
+                break
+            time.sleep(2)
+        self.store.set_meta("whatsapp_bridge_started_at", time.time())
+        return {"started": bool(started.get("started", True)), "status": status.get("status") or "unknown"}
+
     def whatsapp_chats(self, query: str = "") -> list[dict[str, Any]]:
-        data = self._faustus_get("/api/whatsapp/chats", {"limit": 200})
+        try:
+            data = self._faustus_get("/api/whatsapp/chats", {"limit": 200})
+        except RuntimeError as exc:
+            if not self._bridge_down(exc):
+                raise
+            self._start_whatsapp_bridge()
+            data = self._faustus_get("/api/whatsapp/chats", {"limit": 200})
         chats = data.get("chats", data) if isinstance(data, dict) else data
         q = query.lower().strip()
         return [c for c in chats if not q or q in str(c.get("name") or c.get("chat_name") or "").lower() or q in str(c.get("jid") or c.get("id") or "")]
@@ -225,8 +291,16 @@ class Services:
                 return self._faustus_get("/api/whatsapp/message-page", {"chat": chat, "cursor": cursor, "limit": limit})
             totals = {"created": 0, "existing": 0, "sources": set(), "pages": 0}
             last: dict[str, Any] = {}
+            bridge: dict[str, Any] = {}
             for _ in range(max(1, max_pages)):
-                last = sync_whatsapp_page(self.store, client, account=account, chat=chat)
+                try:
+                    last = sync_whatsapp_page(self.store, client, account=account, chat=chat)
+                except RuntimeError as exc:
+                    # The bridge stops with Faustus or a crash and nobody notices for days: start it and read again.
+                    if bridge or not self._bridge_down(exc):
+                        raise
+                    bridge = self._start_whatsapp_bridge()
+                    last = sync_whatsapp_page(self.store, client, account=account, chat=chat)
                 totals["created"] += last["created"]
                 totals["existing"] += last["existing"]
                 totals["sources"].update(last["sources"])
@@ -237,8 +311,11 @@ class Services:
             if totals["created"]:
                 self.start_ocr()    # new screenshots: read them in the background
                 self.start_posts()  # new post links: read them through Links' sessions
-            return {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
-                    "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
+            out = {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
+                   "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
+            if bridge:
+                out["bridge_started"] = bridge
+            return out
         finally:
             lock.release()
 
