@@ -58,9 +58,14 @@ def read_posts(store: Store, call: Call, *, limit: int = 30, repo_check: Callabl
     found: list[str] = []
     errors: list[dict[str, Any]] = []
     cache: dict[str, Optional[bool]] = {}
+    blocked: list[str] = []          # sites that asked for a sign-in in this pass: their posts wait, the others are read
+    skipped = 0
     for i, src in enumerate(todo):
         if on_progress:
             on_progress(i, len(todo))
+        if site_of(src["url"]) in blocked:
+            skipped += 1
+            continue
         res = call("links", "read_post", {"url": src["url"]}, timeout=90.0)
         body = res.get("result") if isinstance(res.get("result"), dict) else {}
         if not res.get("ok") or not body:
@@ -71,8 +76,9 @@ def read_posts(store: Store, call: Call, *, limit: int = 30, repo_check: Callabl
                        or code in ("LOGIN_NEEDED", "REFUSED") or res.get("status") in (401, 403, 502))
             if refused:
                 site = next((s for s in SITES if f'"{s}"' in text), None) or site_of(src["url"])
-                return {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": len(todo) - i,
-                        "login_needed": site or "?", "error": f"Hace falta iniciar sesión en {site or 'el sitio'} (Cuentas)."}
+                blocked.append(site_of(src["url"]) or site or "?")
+                skipped += 1
+                continue
             if "not reachable" in str(err) or res.get("status") in (502, 503):
                 return {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": len(todo) - i, "error": str(err)}
             _set_meta(store, src, "post", {"at": time.time(), "error": str(err)[:300]})
@@ -118,4 +124,9 @@ def read_posts(store: Store, call: Call, *, limit: int = 30, repo_check: Callabl
         found.extend(accepted)
     if on_progress:
         on_progress(len(todo), len(todo))
-    return {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": 0}
+    out: dict[str, Any] = {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": skipped}
+    if blocked:
+        sites = ", ".join(dict.fromkeys(blocked))
+        out.update(login_needed=blocked[0], login_needed_sites=list(dict.fromkeys(blocked)),
+                   error=f"Hace falta iniciar sesión en {sites} (Cuentas); el resto se ha leído.")
+    return out
