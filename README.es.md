@@ -70,7 +70,7 @@ Los estados de propuesta, implementación, verificación y operación van por se
 
 - **Ficheros del radar** (`RADAR_GITTREND.md`, `IMPLEMENTACION_RADAR.md`, `GUIA_IMPLEMENTACION.md`, `radar-ideas.md`). La importación es idempotente.
 - **Tareas del Ágora** que citan `radar #N`.
-- **Chat de WhatsApp «Gittrend»**, en solo lectura a través del puente de Faustus y paginado por cursor. No envía nada ni marca nada como leído.
+- **Chat de WhatsApp «Gittrend»**, en solo lectura a través del puente de Faustus y paginado por cursor. No envía nada ni marca nada como leído. Si el puente está parado, la sincronización lo arranca a través de Faustus, espera a que conecte y vuelve a leer. Cuando el Hub ha movido Faustus a una Spark («Ejecutar en»), Darwin le pregunta a ese Faustus, porque la sesión de WhatsApp viaja con él.
 - **Links**: lo que guardes en Links con la etiqueta `darwin` y cualquier repositorio de GitHub guardado allí (cada pocas horas o con `darwin_import_links`).
 - **Otras apps y agentes**, vía `darwin_ingest` y `darwin_add`.
 - **Árbol**: se construye con `/api/apps` del Hub, el catálogo de herramientas de Faustus y los manifiestos.
