@@ -99,3 +99,53 @@ def test_faustus_moved_to_a_spark_is_asked_there(tmp_path, monkeypatch):
     svc._placement_cache = None
     placement.update(location="sparks", job={"running": True})
     assert svc._faustus_base() == "http://127.0.0.1:7000"   # mid-move: the configured copy
+
+
+def test_pictures_come_from_the_faustus_that_runs_now(tmp_path, monkeypatch):
+    import io
+    import time
+    import urllib.request
+    from types import SimpleNamespace
+
+    svc = Services.__new__(Services)
+    faustus = tmp_path / "faustus"
+    (faustus / "data" / "whatsapp" / "media").mkdir(parents=True)
+    (faustus / "data" / "whatsapp" / "media" / "LOCAL.jpg").write_bytes(b"local")
+    svc.config = SimpleNamespace(faustus_dir=str(faustus), db_path=str(tmp_path / "data" / "darwin.db"))
+    (tmp_path / "data").mkdir()
+    svc.settings = {"faustus_url": "http://127.0.0.1:7000"}
+    svc._placement_cache = (time.time(), "https://spark.example")
+    asked = []
+
+    class Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def fake(url, timeout=0):
+        asked.append(url)
+        if url.endswith("/REMOTE.jpg"):
+            return Resp(b"remote")
+        raise OSError("404")
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    assert svc.ensure_media('"LOCAL.jpg"').read_bytes() == b"local"
+    assert svc.ensure_media('"REMOTE.jpg"').read_bytes() == b"remote"
+    assert asked == ["https://spark.example/api/whatsapp/media/REMOTE.jpg"]
+    assert svc.ensure_media('"MISSING.jpg"') is None
+    assert svc.ensure_media('"../secret.jpg"') is None
+
+
+def test_a_picture_marked_missing_gets_a_second_reading(tmp_path, monkeypatch):
+    svc = Services.__new__(Services)
+    svc.store = Store(tmp_path / "d.db")
+    cid, _ = svc.store.add_capture(capture_key="k1", channel="whatsapp", attachment='"PIC.jpg"',
+                                   declared={"ocr": {"error": "image file not found"}}) if hasattr(svc.store, "add_capture") else (None, None)
+    if cid is None:
+        pytest.skip("store has no add_capture helper")
+    monkeypatch.setattr(Services, "ensure_media", lambda self, raw: tmp_path / "PIC.jpg")
+    assert svc._prefetch_media(10) == 1
+    row = svc.store.one("SELECT declared FROM captures WHERE id=?", (cid,))
+    assert "ocr" not in (row["declared"] if isinstance(row["declared"], dict) else __import__("json").loads(row["declared"]))

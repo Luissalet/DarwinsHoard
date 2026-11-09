@@ -245,12 +245,11 @@ def inbox_ocr_start(request: Request, limit: int = 60):
 
 @router.get("/api/captures/{capture_id}/media")
 def capture_media(request: Request, capture_id: int):
-    """The image a capture refers to, from Faustus's WhatsApp media folder (read only, never outside it)."""
+    """The image a capture refers to, from Darwin's copy of the chat's pictures (fetched from Faustus, wherever it runs)."""
     from fastapi.responses import FileResponse
-    from ..ocr import media_path
     svc = services(request)
     row = svc.store.one("SELECT attachment FROM captures WHERE id=?", (capture_id,))
-    path = media_path(svc.media_dir, (row or {}).get("attachment") or "") if row else None
+    path = svc.ensure_media((row or {}).get("attachment") or "") if row else None
     if path is None:
         raise DarwinError("not_found", "This capture has no image on disk.")
     return FileResponse(path, headers={"Cache-Control": "private, max-age=86400"})
