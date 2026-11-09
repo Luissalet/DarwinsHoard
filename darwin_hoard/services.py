@@ -482,8 +482,68 @@ class Services:
     # ------------------------------------------------------------------ screenshots (OCR)
 
     @property
-    def media_dir(self) -> Path:
+    def faustus_media_dir(self) -> Path:
         return Path(self.config.faustus_dir) / "data" / "whatsapp" / "media"
+
+    @property
+    def media_dir(self) -> Path:
+        """Darwin's own copy of the chat's pictures: the bridge keeps them where Faustus runs, which may be a Spark."""
+        path = Path(self.config.db_path).parent / "whatsapp-media"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def ensure_media(self, raw: str) -> Optional[Path]:
+        """The attachment in Darwin's copy, taken from this PC's Faustus folder or downloaded from the Faustus that runs
+        now (``/api/whatsapp/media/<name>``). None when neither has it."""
+        import shutil
+        import urllib.parse
+        import urllib.request
+        from . import ocr
+        name = ocr.attachment_name(raw)
+        if not name or "/" in name or "\\" in name or name.startswith("."):
+            return None
+        target = self.media_dir / name
+        if target.is_file():
+            return target
+        local = self.faustus_media_dir / name
+        try:
+            if local.is_file():
+                shutil.copy2(local, target)
+                return target
+        except OSError:
+            pass
+        url = f"{self._faustus_base()}/api/whatsapp/media/{urllib.parse.quote(name)}"
+        try:
+            with urllib.request.urlopen(url, timeout=60) as r:
+                data = r.read()
+            if data:
+                tmp = target.with_suffix(target.suffix + ".part")
+                tmp.write_bytes(data)
+                tmp.replace(target)
+                return target
+        except Exception:  # noqa: BLE001 - not there (yet): the OCR marks it missing
+            return None
+        return None
+
+    def _prefetch_media(self, limit: int) -> int:
+        """Bring the pictures the OCR is about to read, and give a second chance to those it marked missing before."""
+        rows = self.store.q("SELECT id, attachment, declared FROM captures WHERE attachment IS NOT NULL "
+                            "AND attachment NOT IN ('', '\"\"') ORDER BY at DESC LIMIT ?", (limit * 4,))
+        got = 0
+        for row in rows:
+            declared = row.get("declared") or {}
+            if isinstance(declared, str):
+                declared = json.loads(declared or "{}")
+            ocr_state = declared.get("ocr")
+            retry = isinstance(ocr_state, dict) and ocr_state.get("error") == "image file not found"
+            if ocr_state and not retry:
+                continue
+            if self.ensure_media(row.get("attachment") or "") is None:
+                continue
+            got += 1
+            if retry:
+                self.store.drop_capture_declared(row["id"], "ocr")
+        return got
 
     def ocr_inbox(self, *, limit: int = 60) -> dict[str, Any]:
         """Read the unread screenshots of the inbox with the family's OCR and link what they show (see :mod:`ocr`)."""
@@ -494,6 +554,10 @@ class Services:
             return {"busy": True, **self.ocr_job}
         try:
             self.ocr_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
+            try:
+                self._prefetch_media(limit)
+            except Exception:  # noqa: BLE001 - the OCR still reads what is already here
+                log.exception("media prefetch")
 
             def progress(done: int, total: int) -> None:
                 self.ocr_job.update(done=done, total=total)

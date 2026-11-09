@@ -277,6 +277,16 @@ class Store:
                 c.execute("UPDATE sources SET captures=captures+1 WHERE id=?", (source_id,))
             return cid, True
 
+    def drop_capture_declared(self, capture_id: int, key: str) -> None:
+        """Remove one derived field (e.g. a failed ``ocr``) so the capture is read again."""
+        with self.tx() as c:
+            row = c.execute("SELECT declared FROM captures WHERE id=?", (capture_id,)).fetchone()
+            if row is None:
+                return
+            data = json.loads(row["declared"] or "{}")
+            if data.pop(key, None) is not None:
+                c.execute("UPDATE captures SET declared=? WHERE id=?", (_j(data), capture_id))
+
     def set_capture_declared(self, capture_id: int, key: str, value: Any) -> None:
         """Add one derived field (e.g. ``ocr``) to a capture's ``declared`` JSON without touching the rest."""
         with self.tx() as c:
