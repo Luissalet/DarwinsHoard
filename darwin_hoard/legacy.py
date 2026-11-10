@@ -343,9 +343,10 @@ class LegacyImporter:
 
     # ------------------------------------------------------------------ Ágora
 
-    def import_agora(self, hub_url: str, *, timeout: float = 15.0, spaces: Optional[Iterable[str]] = None) -> ImportReport:
+    def import_agora(self, hub_url: str, *, timeout: float = 60.0, spaces: Optional[Iterable[str]] = None) -> ImportReport:
         """Tasks that cite ``radar #N`` (title or body) become proposals for their space's app, with the task linked.
-        Task status maps to the proposal state; a ``done`` task with commits adds a declared delivery."""
+        Task status maps to the proposal state; a ``done`` task with commits adds a declared delivery.
+        ``timeout`` is per page: a 500-task page of the large shared space takes the Hub about 30 s."""
         rep = ImportReport(name="agora", file=hub_url)
 
         def get(path: str) -> Any:
