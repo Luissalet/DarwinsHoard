@@ -50,6 +50,8 @@ Six suits from research proposal 36 are seeded once (repository intake, small mi
 
 capture → source → idea → proposal (idea × app) → delivery (proposal × repository/commit/Ágora task) → evidence.
 
+An Ágora task opened for a proposal carries it in its title, «… (Darwin 1013)» or «(Darwin 1016, 1046)». The Ágora import (`darwin_import_legacy`) links the task to each proposal it names and, once the task is `done` with commits, records every commit as a delivery of that proposal.
+
 State axes are kept apart and never folded into one flag:
 
 - proposal: `pendiente`, `investigando`, `debatida`, `aceptada`, `aplazada`, `descartada`, `cubierta`;

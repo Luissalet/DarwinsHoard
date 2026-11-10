@@ -44,6 +44,8 @@ El botón **Añadir** acepta una URL, `owner/repo` o texto libre. Si el hallazgo
 
 captura → fuente → idea → propuesta (idea × app) → entrega (repo/commit/tarea del Ágora) → evidencia.
 
+Una tarea del Ágora abierta para una propuesta la lleva en el título, «… (Darwin 1013)» o «(Darwin 1016, 1046)». La importación del Ágora (`darwin_import_legacy`) enlaza la tarea con cada propuesta que nombra y, cuando la tarea está `done` con commits, registra cada commit como entrega de esa propuesta.
+
 Los estados de propuesta, implementación, verificación y operación van por separado. Lo declarado se guarda tal cual. La comprobación de commits añade `evidence.commit_ancestry` sin pisar lo declarado. Un commit en main es evidencia de código, no una prueba funcional. Todo cambio de estado queda en el historial.
 
 ## Comprobar entregas y mapa de repositorios
