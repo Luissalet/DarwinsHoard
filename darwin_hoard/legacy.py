@@ -35,6 +35,17 @@ STARS_RE = re.compile(r"⭐\s*([~<>]?\s*[\d.,]+\s*[kKmM]?|—|-)")
 SHA_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
 TASK_RE = re.compile(r"(?:tareas?|Ágora|agora|task)\s*\*{0,2}#(\d{2,5})\*{0,2}|\(#(\d{4,5})\)", re.I)
 RADAR_REF_RE = re.compile(r"radar\s*#?\s*(\d{1,3})\b|\(radar\s+#(\d{1,3})\)", re.I)
+# Ágora tasks opened from Darwin's own proposals name them in the title: «… (Darwin 1013)», «(Darwin 1016, 1046)».
+DARWIN_REF_RE = re.compile(r"\(Darwin\s+(\d{1,6}(?:\s*(?:,|y|and)\s*\d{1,6})*)\)", re.I)
+
+
+def darwin_proposal_refs(title: str) -> list[int]:
+    """Proposal ids a task title cites as «(Darwin N, M)»."""
+    out: list[int] = []
+    for group in DARWIN_REF_RE.findall(title or ""):
+        out += [int(n) for n in re.findall(r"\d+", group)]
+    return sorted(set(out))
+
 
 LABELS = [  # (pattern, label) - first match wins
     (r"\bdecisi[oó]n de Luis\b", "decision-luis"),
@@ -172,6 +183,28 @@ class LegacyImporter:
         src = self.store.source(sid)
         return self.store.upsert_proposal(key=f"{src['key']}->{target or '?'}", source_id=sid, target=target, state=state, origin=origin,
                                           reason=reason, declared=declared, agora_space=agora_space, agora_task=agora_task)
+
+    def _link_proposals(self, ids: list[int], space: str, task: dict[str, Any]) -> int:
+        """A task titled «… (Darwin N)» belongs to proposal N: link it, and once it is done with commits record each commit
+        as that proposal's delivery. Returns the deliveries written."""
+        written = 0
+        for pid in ids:
+            row = self.store.one("SELECT id, key, source_id, target, agora_task FROM proposals WHERE id=?", (pid,))
+            if not row:
+                continue
+            if not row["agora_task"]:
+                with self.store.tx() as c:
+                    c.execute("UPDATE proposals SET agora_space=?, agora_task=? WHERE id=? AND agora_task IS NULL", (space, task["id"], pid))
+            if task.get("status") != "done" or not task.get("commits"):
+                continue
+            repo = task.get("repo") if task.get("repo") not in (None, "", "-") else (SPACE_APP.get(space, space) or space)
+            for sha in task["commits"]:
+                self.store.upsert_delivery(key=f"{row['key']}@{sha}", source_id=row["source_id"], target=row["target"], proposal_id=pid,
+                                           repo=repo, commit_sha=str(sha), implementation="integrada", verification="documentada",
+                                           agora_space=space, agora_task=task["id"],
+                                           declared={"agora_status": "done", "title": str(task.get("title", ""))[:300]})
+                written += 1
+        return written
 
     # ------------------------------------------------------------------ radar files
 
@@ -344,6 +377,10 @@ class LegacyImporter:
                 text = f"{t.get('title', '')}\n{t.get('body', '')}"
                 numbers = sorted({int(a or b) for a, b in RADAR_REF_RE.findall(text)})
                 labels = [l for l in (t.get("labels") or []) if str(l).startswith("darwin:")]
+                proposal_ids = darwin_proposal_refs(t.get("title", ""))
+                if proposal_ids:
+                    rep.entries += 1
+                    rep.deliveries += self._link_proposals(proposal_ids, space, t)
                 if not numbers and not labels:
                     continue
                 rep.entries += 1
