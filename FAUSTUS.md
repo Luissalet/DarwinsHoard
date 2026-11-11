@@ -58,3 +58,7 @@
 ## Icono de familia (2026-11-02)
 
 Dragon verde y arbol evolutivo dorado preparados para el Hub (PNG512) y Windows (ICO de seis tamanos). Cabecera, favicon y PWA conservan el icono anterior hasta sustituir los dos PNG static, reservados por la tarea1866. Referencia en docs/ICONS.md.
+
+## Skills for the agents that connect
+
+This app carries procedures from the skill library of the family's workspace for the agents that connect to it: `discovery-to-capability`, `learn-this-repo`, `codebase-onboarding`, `search-first`, `reuse-before-you-write`, `deep-research`. They are named in what an agent reads on connecting, read with `skills_list` and `skill_read`, searched and assigned with `skills_library` and `skills_assign`, and offered as prompts. The person chooses them on the skills page (`/api/agent/skills/page`) or in the hub's Skills tab; the `skills` block of `faustus-plugin.json` holds what the app asks for by default.
