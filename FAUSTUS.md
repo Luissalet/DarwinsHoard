@@ -62,3 +62,9 @@ Dragon verde y arbol evolutivo dorado preparados para el Hub (PNG512) y Windows 
 ## Skills for the agents that connect
 
 This app carries procedures from the skill library of the family's workspace for the agents that connect to it: `discovery-to-capability`, `learn-this-repo`, `codebase-onboarding`, `search-first`, `reuse-before-you-write`, `deep-research`. They are named in what an agent reads on connecting, read with `skills_list` and `skill_read`, searched and assigned with `skills_library` and `skills_assign`, and offered as prompts. The person chooses them on the skills page (`/api/agent/skills/page`) or in the hub's Skills tab; the `skills` block of `faustus-plugin.json` holds what the app asks for by default.
+
+## App Dock
+
+When opened beside a Faustus chat, this page registers `darwin_open`, `darwin_filter`, `darwin_view` through `window.HoardApp`. These tools resolve records by id or unique name, apply the app's filters and switch sections. Ambiguous names return candidates. The current section, selected discovery or capability, and history filters are reported. Discovery lookup uses the existing read API.
+
+`dock/changed` refreshes the mounted views without a page reload. Existing pending form fields are retained by the app's refresh handlers. The standalone interface continues to use its normal routes and controls. The Dock tools are exposed through the host's `app_view` and `app_act`; the existing backend tool catalogue is unchanged.

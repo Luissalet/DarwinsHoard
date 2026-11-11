@@ -268,13 +268,17 @@ async function loadHistory() {
   } catch (e) { fail(e); }
 }
 
-async function openDetail(id) {
+async function openDetail(id, { preserveDrafts = false } = {}) {
   state.selected = id;
   document.querySelectorAll('#list tr').forEach((tr) => tr.classList.toggle('sel', +tr.dataset.id === id));
   const el = $('detail');
-  el.innerHTML = '<div class="empty">Cargando…</div>';
+  if (!preserveDrafts) el.innerHTML = '<div class="empty">Cargando…</div>';
   try {
     const g = await api(`/api/discoveries/${id}`);
+    if (state.selected !== id) return;
+    // Read drafts after the request: typing while the refresh was pending must survive too.
+    const drafts = preserveDrafts ? [...el.querySelectorAll('input, select')].filter((field) => field.tagName === 'INPUT' ? field.value !== field.defaultValue : field.value !== ([...field.options].find((option) => option.defaultSelected) || field.options[0])?.value)
+      .map((field) => ({ selector: field.id ? `#${field.id}` : field.dataset.note ? `[data-note="${field.dataset.note}"]` : `[data-pid="${field.dataset.pid}"]`, value: field.value, focused: field === document.activeElement, start: field.selectionStart, end: field.selectionEnd })) : [];
     const s = g.source;
     const meta = s.meta && typeof s.meta === 'object' ? s.meta : {};
     el.innerHTML = `
@@ -325,7 +329,13 @@ async function openDetail(id) {
       const target = $('new-target').value; if (!target) return toast('Elige la app.', 'err');
       try { await call('darwin_propose', { source_id: id, target, reason: $('new-reason').value }); toast('Propuesta guardada.'); openDetail(id); loadHistory(); } catch (e) { fail(e); }
     });
-  } catch (e) { fail(e); el.innerHTML = '<div class="empty">No se pudo cargar.</div>'; }
+    for (const draft of drafts) {
+      const field = el.querySelector(draft.selector);
+      if (!field) continue;
+      field.value = draft.value;
+      if (draft.focused) { field.focus(); if (typeof draft.start === 'number') field.setSelectionRange(draft.start, draft.end); }
+    }
+  } catch (e) { fail(e); if (!preserveDrafts && state.selected === id) el.innerHTML = '<div class="empty">No se pudo cargar.</div>'; }
 }
 
 const COVERAGE = { covered: ['Ya cubierto', 'st-integrada'], partial: ['Cubierto en parte', 'st-parcial'], gap: ['Nadie lo hace', 'st-aplazada'], unknown: ['Sin datos para comparar', 'st-pendiente'] };
@@ -912,3 +922,61 @@ async function loadPanel() {
     });
   } catch (e) { el.innerHTML = `<div class="empty">${esc(e.message)}</div>`; }
 }
+
+
+// App Dock: domain navigation stays on the same UI and the same read APIs.
+(function installAppDock() {
+  const app = window.HoardApp ||= { q: [] };
+  const send = (method, ...args) => app[method] ? app[method](...args) : app.q.push([method, ...args]);
+  const fold = (value) => String(value || '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().trim();
+  const error = (code, message, candidates) => Object.assign(new Error(message), { code, candidates });
+  const point = async (cursor, el) => { if (el) await cursor.to(el); };
+  const tool = (name, description, properties, required, handler) => send('registerTool', name, {
+    description, inputSchema: { type: 'object', properties, required, additionalProperties: false },
+  }, handler);
+  tool('darwin_open', 'Open a discovery by id or unique title', {
+    id: { type: 'integer', minimum: 1 }, title: { type: 'string', minLength: 1 },
+  }, [], async ({ id, title }, { cursor }) => {
+    if (!id && !title?.trim()) throw error('bad_args', 'Provide id or title');
+    if (!id) {
+      const rows = (await api(`/api/discoveries?${new URLSearchParams({ q: title, limit: 200 })}`)).items;
+      const exact = rows.filter((item) => fold(item.title || item.repo) === fold(title));
+      const matches = exact.length ? exact : rows.filter((item) => fold(item.title || item.repo).includes(fold(title)));
+      if (matches.length !== 1) throw error(matches.length ? 'ambiguous' : 'not_found', matches.length ? 'Several discoveries match; use an id' : 'Discovery not found', matches.slice(0, 8).map((item) => ({ id: item.id, label: item.title || item.repo })));
+      id = matches[0].id;
+    }
+    // Validate before changing the person's current view. openDetail also serves manual selection.
+    const found = await api(`/api/discoveries/${id}`);
+    if (!found.source) throw error('not_found', 'Discovery not found');
+    await point(cursor, document.querySelector(`#list tr[data-id="${id}"]`) || document.querySelector('[data-view="history"]'));
+    show('history'); await openDetail(id);
+    await point(cursor, $('detail').querySelector('h2'));
+    return { opened: id, title: found.source.title || found.source.repo };
+  });
+  tool('darwin_filter', 'Filter discoveries by text, target app, state and channel', {
+    q: { type: 'string' }, target: { type: 'string' },
+    state: { type: 'string', enum: ['', ...Object.keys(STATE_LABEL)] }, channel: { type: 'string', enum: ['', ...Object.keys(CHANNEL_LABEL)] },
+  }, [], async (filter, { cursor }) => {
+    for (const key of ['q', 'target', 'state', 'channel']) {
+      const el = $(`f-${key}`); const value = filter[key] || '';
+      if (el.tagName === 'SELECT' && ![...el.options].some((option) => option.value === value)) throw error('not_found', `Unknown ${key}: ${value}`);
+    }
+    await point(cursor, $('f-q'));
+    for (const key of ['q', 'target', 'state', 'channel']) $(`f-${key}`).value = filter[key] || '';
+    state.page = 0; saveFilters(); show('history'); await loadHistory();
+    return { view: 'history', filters: filter };
+  });
+  tool('darwin_view', 'Switch the Darwin section', { view: { type: 'string', enum: VIEWS } }, ['view'], async ({ view }, { cursor }) => {
+    await point(cursor, document.querySelector(`[data-view="${view}"]`)); show(view); return { view };
+  });
+  send('setContext', () => ({ view: state.view,
+    focus: state.view === 'history' && state.selected ? { kind: 'discovery', id: String(state.selected), label: $('detail').querySelector('h2')?.textContent || '' }
+      : state.view === 'tree' && state.treeSel ? { kind: 'capability', id: state.treeSel, label: $('node-detail').querySelector('h2')?.textContent || '' } : undefined,
+    summary: state.view === 'history' ? ['q', 'target', 'state', 'channel'].map((key) => `${key}=${$(`f-${key}`).value}`).join(' · ') : '',
+  }));
+  send('onChanged', async () => {
+    const selected = state.selected;
+    await loadNames(); show(state.view);
+    if (state.view === 'history' && selected && state.selected === selected) await openDetail(selected, { preserveDrafts: true });
+  });
+})();
