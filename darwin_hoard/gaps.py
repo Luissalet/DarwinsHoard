@@ -56,24 +56,37 @@ def app_of(repo_dir: Path, known_apps: set[str]) -> Optional[str]:
     return app or None
 
 
-def import_objectives(store: Store, hoards_root: Path) -> dict[str, Any]:
+def import_objectives(store: Store, hoards_root: Path, *, extra_files: Optional[list[tuple[Path, str]]] = None,
+                      chat: Optional[Any] = None, days: Optional[int] = None, max_new: Optional[int] = None) -> dict[str, Any]:
+    """Lists become one gap per item. A file longer than ``MAX_LINES`` is a log: it goes through ``gaps_log`` (candidates by
+    cue, sorted by the local model when ``chat`` is given). ``extra_files`` are ``(path, app)`` logs outside the Hoards folder
+    (Faustus's own OBJETIVOS.md)."""
+    from . import gaps_log
     known = {r["app_id"] for r in store.q("SELECT DISTINCT app_id FROM capabilities WHERE app_id IS NOT NULL")}
     files = sorted({*hoards_root.glob("*/OBJETIVOS.md"), *hoards_root.glob("*/*/OBJETIVOS.md")})
+    forced = {Path(p): a for p, a in (extra_files or [])}
+    files = sorted({*files, *forced})
     added = closed = kept = 0
     report: dict[str, Any] = {}
+    log_totals = {"added": 0, "closed": 0, "pending": 0}
     for path in files:
         try:
             text = path.read_text(encoding="utf-8")
         except OSError:
             continue
-        if len(text.splitlines()) > MAX_LINES:
-            report[str(path)] = "skipped: a log, not a list"
+        if path in forced or len(text.splitlines()) > MAX_LINES:
+            res = gaps_log.import_log(store, path, forced.get(path) or app_of(path.parent, known), chat=chat,
+                                      days=days or gaps_log.DEFAULT_DAYS, max_new=max_new or gaps_log.MAX_NEW_PER_RUN)
+            report[str(path)] = {"log": True, **res}
+            for k in log_totals:
+                log_totals[k] += int(res.get(k) or 0)
             continue
         app = app_of(path.parent, known)
         items = parse(text)
         titles = {i["title"] for i in items}
         source = str(path)
-        existing = {r["title"]: r for r in store.q("SELECT id, title, state FROM gaps WHERE json_extract(watch,'$.file')=?", (source,))}
+        existing = {r["title"]: r for r in store.q("SELECT id, title, state FROM gaps WHERE json_extract(watch,'$.file')=? "
+                                                 "AND COALESCE(json_extract(watch,'$.from'),'objetivos')='objetivos'", (source,))}
         for it in items:
             if it["title"] in existing:
                 kept += 1
@@ -86,4 +99,5 @@ def import_objectives(store: Store, hoards_root: Path) -> dict[str, Any]:
                     c.execute("UPDATE gaps SET state='cerrada', updated=? WHERE id=?", (time.time(), row["id"]))
                 closed += 1
         report[str(path)] = {"app": app, "items": len(items)}
-    return {"added": added, "kept": kept, "closed": closed, "files": report}
+    return {"added": added + log_totals["added"], "kept": kept, "closed": closed + log_totals["closed"],
+            "log_added": log_totals["added"], "log_pending": log_totals["pending"], "files": report}
