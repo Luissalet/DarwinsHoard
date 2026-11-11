@@ -3,8 +3,11 @@
 Most of what Luis sends to the Gittrend chat is a screenshot of a post, not a link. A capture with an image attachment and no
 source goes through the OCR engine of the family (Kafka's, via ``hoard_link.fam_docs.ocr_image``); URLs found in the text are
 taken as they are, bare ``owner/name`` mentions only once GitHub confirms the repository exists (OCR of a post is full of
-``and/or``-shaped noise). The result is kept on the capture (``declared.ocr``), so an image is read once; a capture whose image
-shows nothing recognisable stays in the inbox with the text that was read, for a person to finish."""
+``and/or``-shaped noise). When Kafka's engine gives the layout (Indra: the blocks of the page in reading order), each block (a post,
+a repository card, an address bar) is read on its own and a link that wraps at the end of a line is joined back, so a list of
+«github.com/owner/» + «repo» lines yields the repositories and not just their owners. The result is kept on the capture
+(``declared.ocr``, with the blocks that held links), so an image is read once; a capture whose image shows nothing recognisable
+stays in the inbox with the text that was read, for a person to finish."""
 
 from __future__ import annotations
 
@@ -97,6 +100,45 @@ def complete_truncated(text: str, repo_list: RepoList = github_owner_repos) -> t
     return TRUNCATED_GITHUB.sub(fix, text), done
 
 
+LINKISH_END = re.compile(r"(?:github\s*\.\s*com|https?:/|www\.)\S*[/_-]$", re.IGNORECASE)
+LINK_TAIL = re.compile(r"^[A-Za-z0-9_.~#/?=&%-]+(?=\s|$)")
+SKIP_BLOCKS = {"Picture"}
+
+
+def rejoin(text: str) -> str:
+    """A link that wraps at the end of a line («github.com/owner/» + «repo», «…/agent-» + «skills») is joined back to the next
+    line's first word. Only a link that ends in «/», «-» or «_» is taken as cut; a whole link at the end of a line stays as it is."""
+    lines = [ln.rstrip() for ln in (text or "").splitlines()]
+    out: list[str] = []
+    for line in lines:
+        head = LINK_TAIL.match(line.lstrip())
+        if out and head and LINKISH_END.search(out[-1]):
+            rest = line.lstrip()[head.end():].lstrip()
+            out[-1] = out[-1] + head.group(0)
+            if rest:
+                out.append(rest)
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+def segments(res: dict[str, Any]) -> list[dict[str, str]]:
+    """The parts of a screenshot read one by one: each layout block Kafka returns (a post, a repository card, an address bar) in
+    reading order, with its wrapped links joined, so the links of one post stay with that post and a line of one post never
+    continues into the next; the whole text as one part when the engine gave no layout."""
+    parts: list[dict[str, str]] = []
+    for block in res.get("layout") or []:
+        if not isinstance(block, dict) or block.get("label") in SKIP_BLOCKS:
+            continue
+        text = str(block.get("text") or "").strip()
+        if text:
+            parts.append({"label": str(block.get("label") or "Text"), "text": rejoin(text)})
+    if not parts:
+        text = str(res.get("text") or "")
+        parts = [{"label": "text", "text": rejoin(text)}] if text.strip() else []
+    return parts
+
+
 def github_repo_exists(repo: str, *, timeout: float = 6.0) -> Optional[bool]:
     req = urllib.request.Request(f"https://api.github.com/repos/{repo}", method="GET",
                                  headers={"Accept": "application/vnd.github+json", "User-Agent": "darwins-hoard"})
@@ -136,6 +178,12 @@ def read_inbox(store: Store, media_dir: Path, ocr: OcrFn, *, repo_check: RepoChe
     done = linked = missing = 0
     found: list[str] = []
     cache: dict[str, Optional[bool]] = {}
+    owners: dict[str, Optional[list[str]]] = {}
+
+    def owner_repos(owner: str) -> Optional[list[str]]:       # one lookup per owner for the whole run, whatever the block
+        if owner not in owners:
+            owners[owner] = repo_list(owner)
+        return owners[owner]
     for i, cap in enumerate(todo):
         if on_progress:
             on_progress(i, len(todo))
@@ -150,29 +198,48 @@ def read_inbox(store: Store, media_dir: Path, ocr: OcrFn, *, repo_check: RepoChe
                     "error": res.get("error") or "OCR failed", "kind": res.get("kind") or "failed"}
         text = str(res.get("text") or "")
         accepted, unverified = [], []
+        completed: list[str] = []
         checks = 0
-        refs_text, completed = complete_truncated(text, repo_list)
-        for ref in extract_refs(refs_text):
-            if ref["kind"] == "candidate":
-                repo = ref["raw"]
-                if repo not in cache:
-                    if checks >= MAX_CANDIDATES:
-                        unverified.append(repo)
-                        continue
-                    checks += 1
-                    cache[repo] = repo_check(repo)
-                if cache[repo] is None:
-                    unverified.append(repo)
-                if not cache[repo]:
+        parts = segments(res)
+        per_block: list[dict[str, Any]] = []
+        for part in parts:                                    # each post or card on its own: its links stay with it
+            refs_text, done_here = complete_truncated(part["text"], owner_repos)
+            completed += [c for c in done_here if c not in completed]
+            block_refs: list[str] = []
+            for ref in extract_refs(refs_text):
+                if ref["url"] in accepted:
+                    block_refs.append(ref["url"])
                     continue
-                sid = store.upsert_source(repo=repo, seen_at=cap.get("at"))
-            else:
-                sid = store.upsert_source(url=ref["url"], seen_at=cap.get("at"))
-            store.link_capture(cap["id"], sid)
-            accepted.append(ref["url"])
-        store.set_capture_declared(cap["id"], "ocr", {"at": time.time(), "text": text[:4000], "refs": accepted,
-                                                       "unverified": unverified, "backend": res.get("backend") or "",
-                                                       "completed": completed})
+                if ref["kind"] == "candidate":
+                    repo = ref["raw"]
+                    if repo not in cache:
+                        if checks >= MAX_CANDIDATES:
+                            if repo not in unverified:
+                                unverified.append(repo)
+                            continue
+                        checks += 1
+                        cache[repo] = repo_check(repo)
+                    if cache[repo] is None and repo not in unverified:
+                        unverified.append(repo)
+                    if not cache[repo]:
+                        continue
+                    sid = store.upsert_source(repo=repo, seen_at=cap.get("at"))
+                else:
+                    sid = store.upsert_source(url=ref["url"], seen_at=cap.get("at"))
+                store.link_capture(cap["id"], sid)
+                accepted.append(ref["url"])
+                block_refs.append(ref["url"])
+            if block_refs and res.get("layout"):
+                per_block.append({"label": part["label"], "text": part["text"][:400], "refs": block_refs})
+        declared = {"at": time.time(), "text": text[:4000], "refs": accepted, "unverified": unverified, "backend": res.get("backend") or "",
+                    "completed": completed}
+        if res.get("layout"):
+            declared["blocks"] = per_block
+            declared["layout_blocks"] = len(parts)
+        report = res.get("engine_report")
+        if isinstance(report, dict) and report.get("fallback"):
+            declared["engine_fallback"] = str(report.get("reason") or "")[:200]
+        store.set_capture_declared(cap["id"], "ocr", declared)
         done += 1
         linked += 1 if accepted else 0
         found.extend(accepted)

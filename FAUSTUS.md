@@ -30,11 +30,13 @@
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
 | «¿Qué encargos sabes resolver?» (trajes) | `darwin_suits` (estado: proposed, partial, backed, evaluated), `darwin_suit_get` (operaciones con su prueba), `darwin_suit_save`, `darwin_suits_seed` |
 | Marcar una capacidad como implementada | `darwin_capability_mark` (exige prueba: commit, test o fichero de QA; sin ella se rechaza) |
-| Carencias que ya podrían estar resueltas | `darwin_gaps_reconcile` (marca «posiblemente obsoleta» con la prueba; confirmar/descartar lo decide una persona) |
+| Carencias que ya podrían estar resueltas | `darwin_gaps_reconcile` (marca «posiblemente obsoleta» con la prueba; `semantic: true` compara por significado con el modelo local; confirmar/descartar lo decide una persona) |
+| Carencias desde los diarios de objetivos de Faustus y Writer | `darwin_gaps_import` (idempotente; cada carencia guarda fichero, sección y línea; `log_pending` = candidatas por clasificar) |
+| Corregir el repositorio, el commit o la tarea de una entrega | `darwin_delivery_fix` (guarda lo declarado antes, la vuelve a comprobar; `clear_commit` para un commit que nunca existió) |
 | Resultados de evaluar un traje en Pygmalion | `darwin_suit_import_eval` (JSON `pygmalion-suit-eval/1` o ruta del fichero) |
 | "Does an app already do this?" for a discovery or a text | `darwin_coverage` (covered / partial / gap with the matching apps and nodes; explains, never blocks) |
 | What the radar should look for next | `darwin_radar_plan` (gaps ranked, GitHub and web queries, candidates already held; `notify: false` = nothing new, stay quiet) |
-| Search GitHub for the top gaps | `darwin_radar_run` (`add: true` registers the new repositories; link collections are left out) |
+| Search GitHub for the top gaps | `darwin_radar_run` (`add: true` registers the new repositories; link collections are left out; `web: true` also searches the keyless web and reports or registers the pages) |
 | «Avísame cuando…» | `darwin_watch_add`, `darwin_watches`, `darwin_watches_check` (notify only with news), `darwin_watch_update` |
 | Proposals across the family | `darwin_proposals` (state, app, origin, words) |
 | Named history filters | `darwin_saved_filters`, then `darwin_find` with `saved` |

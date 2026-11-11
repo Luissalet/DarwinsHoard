@@ -1,4 +1,5 @@
 """Coverage against the tree, the gap-driven radar, saved questions, proposals list, saved filters and the panel."""
+import sys
 import time
 
 from darwin_hoard import coverage, radar, views, watches
@@ -166,3 +167,38 @@ def test_link_collections_are_not_candidates():
     assert radar.is_collection({"name": "Best-websites", "description": "A list of best websites a programmer should visit"})
     assert radar.is_collection({"name": "x", "topics": ["awesome-list"]})
     assert not radar.is_collection({"full_name": "nicehash/hotkeys", "description": "Global hotkeys for screen capture"})
+
+
+def test_radar_web_pages_are_reported_and_registered(tmp_path):
+    store = _seed(tmp_path)
+    store.add_gap(title="knitting pattern generator", detail="sweater knitting patterns")
+    web = lambda q, n: [{"title": "Knit tool", "url": "https://example.org/knit?utm_source=x", "snippet": "patterns"}]  # noqa: E731
+    out = radar.run(store, top=1, add=True, search=lambda q, n: [], web=True, web_fn=web)
+    page = out["results"][0]["pages"][0]
+    assert page["known"] is False and page["source_id"] and out["added"] == 1
+    again = radar.run(store, top=1, add=True, search=lambda q, n: [], web=True, web_fn=web)
+    assert again["results"][0]["pages"][0]["known"] is True and again["new"] == 0
+
+    def down(q, n):
+        raise OSError("offline")
+    bad = radar.run(store, top=1, search=lambda q, n: [], web=True, web_fn=down)
+    assert bad["errors"] and bad["errors"][0]["error"].startswith("web:")
+    assert "pages" not in radar.run(store, top=1, search=lambda q, n: [])["results"][0] or radar.run(store, top=1, search=lambda q, n: [])["results"][0]["pages"] == []
+
+
+def test_web_search_parses_duckduckgo_html(monkeypatch):
+    monkeypatch.setitem(sys.modules, "ddgs", None)
+    page = ('<a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.org%2Fa&rut=1">Titulo <b>A</b></a>'
+            '<a class="result__snippet" href="x">Un <b>resumen</b></a>')
+
+    class Resp:
+        def read(self):
+            return page.encode()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr("urllib.request.urlopen", lambda *a, **k: Resp())
+    assert radar.web_search("q") == [{"title": "Titulo A", "url": "https://example.org/a", "snippet": "Un resumen"}]

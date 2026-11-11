@@ -197,6 +197,40 @@ def github_search(query: str, per_page: int = 5, timeout: float = 20.0) -> list[
     return out[:per_page]
 
 
+def web_search(query: str, per_page: int = 5, timeout: float = 20.0) -> list[dict[str, Any]]:
+    """Keyless web search, as Faustus does it (the ``ddgs`` package, else DuckDuckGo's HTML page): ``[{title, url, snippet}]``."""
+    import html as _html
+    import re
+    import urllib.parse
+    import urllib.request
+    try:  # the `ddgs` package, as Faustus uses it; DuckDuckGo's plain HTML page often answers with a bot challenge
+        from ddgs import DDGS
+        raw = DDGS().text(query, max_results=per_page * 2) or []
+        hits = [{"title": h.get("title") or "", "url": h.get("href") or "", "snippet": h.get("body") or ""} for h in raw
+                if str(h.get("href") or "").startswith("http") and "/aclick" not in str(h.get("href"))]
+        if hits:
+            return hits[:per_page]
+    except Exception:  # noqa: BLE001 - not installed or blocked: fall back to the HTML page
+        pass
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (darwins-hoard)"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # noqa: S310 - fixed host
+        page = resp.read().decode("utf-8", "replace")
+    out: list[dict[str, Any]] = []
+    snippets = re.findall(r'class="result__snippet"[^>]*>(.*?)</a>', page, re.S)
+    for i, m in enumerate(re.finditer(r'class="result__a"[^>]*href="([^"]+)"[^>]*>(.*?)</a>', page, re.S)):
+        href = _html.unescape(m.group(1))
+        if href.startswith("//"):
+            href = "https:" + href
+        qs = urllib.parse.parse_qs(urllib.parse.urlparse(href).query)
+        target = qs["uddg"][0] if "uddg" in qs else href
+        if not target.startswith("http") or "duckduckgo.com" in urllib.parse.urlparse(target).netloc:
+            continue
+        clean = lambda s: _html.unescape(re.sub(r"<[^>]+>", "", s)).strip()  # noqa: E731
+        out.append({"title": clean(m.group(2)), "url": target, "snippet": clean(snippets[i]) if i < len(snippets) else ""})
+    return out[:per_page]
+
+
 def is_collection(repo: dict[str, Any]) -> bool:
     """A list of links (awesome-*, «curated list», «best websites») rather than a project that does something."""
     name = str(repo.get("name") or repo.get("full_name") or "").lower().split("/")[-1]
@@ -208,8 +242,10 @@ def is_collection(repo: dict[str, Any]) -> bool:
 
 def run(store: Store, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_ids: Optional[list[int]] = None,
         search: Optional[SearchFn] = None, now: Optional[float] = None,
-        translate: Optional[Callable[[list[dict[str, Any]]], dict[int, str]]] = None) -> dict[str, Any]:
-    """Search GitHub for the ``top`` gaps of the plan (or ``gap_ids``); report each repository as known or new and, with
+        translate: Optional[Callable[[list[dict[str, Any]]], dict[int, str]]] = None, web: bool = False,
+        web_fn: Optional[SearchFn] = None) -> dict[str, Any]:
+    """With ``web``, each gap also gets the plan's web query run on the keyless web search (pages, not only repositories).
+    Search GitHub for the ``top`` gaps of the plan (or ``gap_ids``); report each repository as known or new and, with
     ``add``, register the new ones as discoveries (channel radar, linked to the gap they answer)."""
     now = now or time.time()
     search = search or github_search
@@ -237,7 +273,23 @@ def run(store: Store, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_
                 if add:
                     item["source_id"] = _register(store, r, g, now)
             found.append(item)
-        results.append({"gap_id": g["gap_id"], "title": g["title"], "query": q, "repos": found})
+        pages = []
+        if web and g["queries"].get("web"):
+            try:
+                hits = (web_fn or web_search)(g["queries"]["web"], per_gap)
+            except Exception as exc:  # noqa: BLE001 - a failed web search does not stop the run
+                errors.append({"gap_id": g["gap_id"], "error": "web: " + str(exc)[:200]})
+                hits = []
+            for w in hits:
+                key = source_key(url=w["url"])
+                known = store.source_by_key(key)
+                item = {**w, "known": bool(known), "source_id": known["id"] if known else None}
+                if not known:
+                    new_total += 1
+                    if add:
+                        item["source_id"] = _register_page(store, w, g, now)
+                pages.append(item)
+        results.append({"gap_id": g["gap_id"], "title": g["title"], "query": q, "repos": found, "pages": pages})
     store.set_meta("radar_searched", searched)
     runs = (store.get_meta("radar_runs", []) or [])[-29:]
     runs.append({"at": now, "gaps": [r["gap_id"] for r in results], "new": new_total, "added": add, "errors": len(errors)})
@@ -245,6 +297,18 @@ def run(store: Store, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_
     return {"at": now, "searched": len(results), "new": new_total, "added": new_total if add else 0, "notify": bool(new_total),
             "results": results, "errors": errors,
             "summary": (f"{new_total} repositorios nuevos en {len(results)} carencias." if new_total else "Sin repositorios nuevos.")}
+
+
+def _register_page(store: Store, page: dict[str, Any], gap: dict[str, Any], now: float) -> int:
+    sid = store.upsert_source(url=page["url"], title=page.get("title") or page["url"], summary=(page.get("snippet") or "")[:600],
+                              meta={"radar_gap": gap["gap_id"], "via": "web"})
+    digest = hashlib.sha1(f"{gap['gap_id']}:{page['url']}".encode()).hexdigest()[:16]
+    cid, _ = store.add_capture(capture_key=f"radar:web:{digest}", channel="radar", text=f"{page['url']}\n{page.get('snippet') or ''}",
+                               url=page["url"], author="radar",
+                               declared={"gap": gap["gap_id"], "gap_title": gap["title"], "query": gap["queries"]["web"]},
+                               provenance={"via": "darwin_radar_run", "gap": gap["gap_id"], "at": now, "search": "web"})
+    store.link_capture(cid, sid)
+    return sid
 
 
 def _register(store: Store, repo: dict[str, Any], gap: dict[str, Any], now: float) -> int:
