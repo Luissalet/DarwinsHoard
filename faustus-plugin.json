@@ -92,5 +92,6 @@
       "DARWIN_HUB_URL"
     ]
   },
-  "notes": "Python 3.11+ with FastAPI and the vendored Hoard Link copy (darwin_hoard/hoard_link). Data in data/darwin.db (SQLite). Reads, never writes, the radar Markdown files, the hub (apps and Ágora tasks) and Faustus's tool catalogue; works with every other app stopped (last snapshot of the tree)."
+  "notes": "Python 3.11+ with FastAPI and the vendored Hoard Link copy (darwin_hoard/hoard_link). Data in data/darwin.db (SQLite). Reads, never writes, the radar Markdown files, the hub (apps and Ágora tasks) and Faustus's tool catalogue; works with every other app stopped (last snapshot of the tree).",
+  "skills": {"slugs": ["discovery-to-capability", "learn-this-repo", "codebase-onboarding", "search-first", "reuse-before-you-write", "deep-research"], "limit": 6}
 }
