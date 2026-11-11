@@ -511,23 +511,47 @@ async function updateBadge() {
 
 // ------------------------------------------------------------------ gaps
 
+// Where a gap that came from a file was read: file, section and line (the line is where the text is today).
+function gapOrigin(g) {
+  const w = g.watch || {};
+  if (!w.file) return '';
+  const name = String(w.file).split(/[\\/]/).slice(-2).join('/');
+  return ` · <span title="${esc(w.file)}">${esc(name)}${w.section ? ' · ' + esc(String(w.section).slice(0, 70)) : ''}${w.line ? ' · línea ' + w.line : ''}</span>${w.classified === 'heuristic' ? ' · sin revisar por el modelo' : ''}`;
+}
+
 async function loadGaps() {
   try {
     const r = await call('darwin_gaps');
     const stale = r.gaps.filter((g) => g.possibly_stale && g.state === 'abierta');
-    $('gaps-stale').innerHTML = stale.length ? `<div class="card"><div class="card-head"><h3>Posiblemente obsoletas (${stale.length})</h3>
-      <div class="actions"><button class="btn small" id="gaps-recheck" type="button">Reconciliar</button></div></div>
-      <p class="hint">El árbol marca como implementada, con prueba, una capacidad que estas carencias nombran. Siguen abiertas hasta que las confirmes; no cuentan como pendientes.</p>
-      ${stale.map((g) => `<div class="item"><div class="head"><b>${esc(g.title)}</b><span class="chip st-parcial">posiblemente obsoleta</span></div>
-        <div class="body">Capacidad: <code>${esc(g.possibly_stale.capability_name)}</code> ${evidenceHtml(g.possibly_stale.evidence)}</div>
-        <div class="actions"><button class="btn small" data-confirm="${g.id}" type="button">Confirmar: ya está resuelta</button><button class="btn small ghost" data-dismiss="${g.id}" type="button">No es lo mismo</button></div></div>`).join('')}</div>`
-      : `<p class="hint" style="margin:0 0 10px">${r.open} carencias abiertas. <button class="btn small ghost" id="gaps-recheck" type="button">Reconciliar con el árbol</button></p>`;
+    const fromLogs = r.gaps.filter((g) => g.watch?.from === 'objetivos-log' && g.state === 'abierta').length;
+    $('gaps-stale').innerHTML = `<div class="card"><div class="card-head"><h3>Carencias de los objetivos</h3>
+      <div class="actions"><button class="btn small" id="gaps-import" type="button" title="Lee todos los OBJETIVOS.md; en los diarios largos de Faustus y Writer el modelo local separa lo hecho de lo pendiente">Importar de los objetivos</button>
+      <button class="btn small ghost" id="gaps-recheck" type="button">Reconciliar con el árbol</button>
+      <button class="btn small ghost" id="gaps-semantic" type="button" title="El modelo local lee cada carencia y decide si una capacidad con prueba ya la cubre">Conciliar por significado</button></div></div>
+      <p class="hint" style="margin:0">${r.open} carencias abiertas${fromLogs ? `, ${fromLogs} salidas de los diarios de objetivos` : ''}. Una carencia que el árbol ya cubre queda «posiblemente obsoleta» y no se cierra sola.</p></div>
+      ${stale.length ? `<div class="card"><div class="card-head"><h3>Posiblemente obsoletas (${stale.length})</h3></div>
+      <p class="hint">Una capacidad con prueba parece cubrir estas carencias, por su nombre o por su significado. Siguen abiertas hasta que las confirmes; no cuentan como pendientes.</p>
+      ${stale.map((g) => `<div class="item"><div class="head"><b>${esc(g.title)}</b><span class="chip st-parcial">posiblemente obsoleta</span>${g.possibly_stale.reason === 'semantic' ? '<span class="chip">por significado</span>' : ''}</div>
+        <div class="body">Capacidad: <code>${esc(g.possibly_stale.capability_name)}</code> ${evidenceHtml(g.possibly_stale.evidence)}${g.possibly_stale.matched?.[0] && g.possibly_stale.reason === 'semantic' ? `<div class="meta">${esc(g.possibly_stale.matched[0])}</div>` : ''}</div>
+        <div class="actions"><button class="btn small" data-confirm="${g.id}" type="button">Confirmar: ya está resuelta</button><button class="btn small ghost" data-dismiss="${g.id}" type="button">No es lo mismo</button></div></div>`).join('')}</div>` : ''}`;
     $('gaps-recheck')?.addEventListener('click', async () => { try { const x = await call('darwin_gaps_reconcile', { by: 'luis' }); toast(`${x.stale_count} posiblemente obsoletas, ${x.open} abiertas.`); loadGaps(); } catch (e) { fail(e); } });
+    $('gaps-semantic')?.addEventListener('click', async (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Preguntando al modelo…';
+      try { const x = await call('darwin_gaps_reconcile', { by: 'luis', semantic: true, limit: 40 }); const s = x.semantic || {};
+        toast(`Por significado: ${s.asked} consultadas, ${s.flagged} marcadas como posiblemente obsoletas${s.model_failed ? `, ${s.model_failed} sin respuesta del modelo` : ''}.`); loadGaps(); }
+      catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Conciliar por significado'; }
+    });
+    $('gaps-import')?.addEventListener('click', async (ev) => {
+      const b = ev.currentTarget; b.disabled = true; b.textContent = 'Leyendo los objetivos…';
+      try { const x = await call('darwin_gaps_import', {});
+        toast(`Objetivos: ${x.added} carencias nuevas (${x.log_added} de los diarios), ${x.closed} cerradas${x.log_pending ? `, ${x.log_pending} por clasificar en la próxima pasada` : ''}.`); loadGaps(); }
+      catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Importar de los objetivos'; }
+    });
     document.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { confirm_ids: [+b.dataset.confirm], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
     document.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { dismiss_ids: [+b.dataset.dismiss], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
     $('gaps-badge').hidden = !stale.length; $('gaps-badge').textContent = stale.length;
     $('gaps').innerHTML = r.gaps.filter((g) => !(g.possibly_stale && g.state === 'abierta')).map((g) => `<div class="card"><div class="card-head"><h3 style="text-transform:none;font-size:15px;color:var(--hoard-text)">${esc(g.title)}</h3>${chip(g.state === 'abierta' ? 'pendiente' : 'integrada', g.state)}</div>
-      ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}<div class="meta">${g.target ? 'Para ' + esc(appName(g.target)) + ' · ' : ''}${whenFull(g.created)}${g.watch?.condition ? ' · Se podrá cuando: ' + esc(g.watch.condition) : ''}</div></div>`).join('') || '<div class="empty">No hay carencias apuntadas. Apunta aquí lo que quieres poder hacer y ninguna app hace: el radar buscará contra esto.</div>'
+      ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}<div class="meta">${g.target ? 'Para ' + esc(appName(g.target)) + ' · ' : ''}${whenFull(g.created)}${g.watch?.condition ? ' · Se podrá cuando: ' + esc(g.watch.condition) : ''}${gapOrigin(g)}</div></div>`).join('') || '<div class="empty">No hay carencias apuntadas. Apunta aquí lo que quieres poder hacer y ninguna app hace: el radar buscará contra esto.</div>'
   } catch (e) { fail(e); }
 }
 $('gap-form').addEventListener('submit', async (ev) => {
@@ -782,7 +806,9 @@ function radarItem(g) {
 function runResultHtml(res) {
   return (res.results || []).map((r) => `<div class="body"><span class="meta">${esc(r.title)} — ${esc(r.query)}</span><ul class="plain">${r.repos.map((x) => `<li>${x.known ? '<span class="chip st-cubierta">ya estaba</span>' : '<span class="chip st-aceptada">nuevo</span>'}
       ${x.source_id ? `<a href="#" data-open="${x.source_id}">${esc(x.full_name)}</a>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.full_name)}</a>`}
-      <span class="meta">★ ${x.stars}${x.license ? ' · ' + esc(x.license) : ''} · ${esc((x.description || '').slice(0, 140))}</span></li>`).join('') || '<li class="meta">Sin resultados.</li>'}</ul></div>`).join('')
+      <span class="meta">★ ${x.stars}${x.license ? ' · ' + esc(x.license) : ''} · ${esc((x.description || '').slice(0, 140))}</span></li>`).join('') || '<li class="meta">Sin resultados.</li>'}${(r.pages || []).map((x) => `<li>${x.known ? '<span class="chip st-cubierta">ya estaba</span>' : '<span class="chip st-aceptada">nuevo</span>'} <span class="chip">web</span>
+      ${x.source_id ? `<a href="#" data-open="${x.source_id}">${esc(x.title || x.url)}</a>` : `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.title || x.url)}</a>`}
+      <span class="meta">${esc((x.snippet || '').slice(0, 140))}</span></li>`).join('')}</ul></div>`).join('')
     + (res.errors || []).map((e) => `<div class="meta">Carencia ${e.gap_id}: ${esc(e.error)}</div>`).join('');
 }
 function bindOpen(el) { el.querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); show('history'); openDetail(+a.dataset.open); })); }
@@ -795,7 +821,7 @@ async function loadRadar() {
     bindOpen($('rd-list'));
     $('rd-list').querySelectorAll('[data-rsearch]').forEach((b) => b.addEventListener('click', async () => {
       const box = $('rd-list').querySelector(`[data-rresult="${b.dataset.rsearch}"]`); box.innerHTML = '<span class="meta">Buscando en GitHub…</span>';
-      try { const r = await api('/api/radar/run', { method: 'POST', body: { gap_ids: [+b.dataset.rsearch], add: $('rd-add').checked } }); box.innerHTML = runResultHtml(r); bindOpen(box); }
+      try { const r = await api('/api/radar/run', { method: 'POST', body: { gap_ids: [+b.dataset.rsearch], add: $('rd-add').checked, web: $('rd-web').checked } }); box.innerHTML = runResultHtml(r); bindOpen(box); }
       catch (e) { box.innerHTML = ''; fail(e); }
     }));
   } catch (e) { $('rd-status').textContent = ''; fail(e); }
@@ -804,7 +830,7 @@ $('rd-refresh').addEventListener('click', loadRadar);
 $('rd-run').addEventListener('click', async () => {
   const b = $('rd-run'); b.disabled = true; $('rd-status').textContent = 'Buscando en GitHub las tres primeras carencias…';
   try {
-    const r = await api('/api/radar/run', { method: 'POST', body: { top: 3, add: $('rd-add').checked } });
+    const r = await api('/api/radar/run', { method: 'POST', body: { top: 3, add: $('rd-add').checked, web: $('rd-web').checked } });
     $('rd-status').textContent = r.summary + (r.added ? ` ${r.added} guardados como descubrimientos.` : '');
     await loadRadar();
     $('rd-status').textContent = r.summary + (r.added ? ` ${r.added} guardados como descubrimientos.` : '');

@@ -117,7 +117,27 @@ class Services:
     def import_legacy(self, *, inspiration_dir: str = "", radar_ideas: str = "", agora: bool = True) -> dict[str, Any]:
         return self.importer.import_all(inspiration_dir=Path(inspiration_dir or self.settings["inspiration_dir"]),
                                         radar_ideas=Path(radar_ideas or self.settings["radar_ideas"]),
-                                        hub_url=self.config.hub_url, agora=agora, hoards_root=Path(self.config.hoards_root))
+                                        hub_url=self.config.hub_url, agora=agora, hoards_root=Path(self.config.hoards_root),
+                                        extra_objectives=self.log_objectives())
+
+    def log_objectives(self) -> list[tuple[Path, str]]:
+        """Objective logs outside the Hoards folder that also say what is wanted: Faustus's own."""
+        path = Path(self.config.faustus_dir) / "OBJETIVOS.md"
+        return [(path, "faustus")] if path.is_file() else []
+
+    def import_gaps(self, *, use_model: bool = True, days: int = 0, max_new: int = 0) -> dict[str, Any]:
+        """Gaps from every OBJETIVOS.md (lists and the long logs of Faustus and Writer); the local model sorts done from pending."""
+        from . import gaps, gaps_log
+        from .hoard_link import family
+        lock = self._sync_locks.setdefault("gaps_import", threading.Lock())
+        if not lock.acquire(blocking=False):
+            return {"busy": True}
+        try:
+            return gaps.import_objectives(self.store, Path(self.config.hoards_root), extra_files=self.log_objectives(),
+                                          chat=family.chat if use_model else None, days=days or gaps_log.DEFAULT_DAYS,
+                                          max_new=max_new or gaps_log.MAX_NEW_PER_RUN)
+        finally:
+            lock.release()
 
     # ------------------------------------------------------------------ ingestion (darwin_ingest, by Codex)
 
@@ -172,6 +192,45 @@ class Services:
                                                "search": bool(search)}.items() if v}
         self.update_settings({"repo_aliases": aliases})
         return self.repo_aliases()
+
+    def fix_delivery(self, delivery_id: int, *, repo: str = "", commit_sha: str = "", agora_task: int = 0, note: str = "",
+                     by: str = "agent", clear_commit: bool = False) -> dict[str, Any]:
+        """Correct the repository, commit or Ágora task a delivery declared (a rewritten history, a wrong repository) and check
+        that delivery again. The declared values are kept in ``declared`` and every change goes to the history."""
+        from darwin_ingest import verify_deliveries
+        from .errors import DarwinError
+        row = self.store.one("SELECT * FROM deliveries WHERE id=?", (int(delivery_id),))
+        if not row:
+            raise DarwinError("not_found", f"No delivery {delivery_id}.")
+        repo, commit_sha = (repo or "").strip(), re.sub(r"\s+", " ", (commit_sha or "").strip())
+        if not (repo or commit_sha or agora_task or clear_commit):
+            raise DarwinError("invalid", "Give repo, commit_sha, agora_task or clear_commit.")
+        if clear_commit and commit_sha:
+            raise DarwinError("invalid", "clear_commit and commit_sha exclude each other.")
+        if commit_sha and not re.fullmatch(r"[0-9a-fA-F]{7,40}(?:[ ,]+[0-9a-fA-F]{7,40})*", commit_sha):
+            raise DarwinError("invalid", f"«{commit_sha}» is not a commit id (7-40 hex digits, several separated by commas).")
+        changes = {k: v for k, v in (("repo", repo), ("commit_sha", commit_sha), ("agora_task", int(agora_task) or None)) if v}
+        if clear_commit and row.get("commit_sha"):
+            changes["commit_sha"] = None  # the commit belonged to another task: the delivery has none of its own
+        changes = {k: v for k, v in changes.items() if str(row.get(k) or "") != str(v if v is not None else "")}
+        declared = row.get("declared") if isinstance(row.get("declared"), dict) else {}
+        if changes:
+            now = time.time()
+            with self.store.tx() as c:
+                kept = dict(declared)
+                prior = kept.setdefault("declared_before_fix", {})
+                for k, v in changes.items():
+                    prior.setdefault(k, row.get(k))
+                    c.execute(f"UPDATE deliveries SET {k}=?, updated=? WHERE id=?", (v, now, row["id"]))
+                    c.execute("INSERT INTO history(entity, entity_id, field, old, new, at, by, note) VALUES ('deliveries',?,?,?,?,?,?,?)",
+                              (row["id"], k, str(row.get(k) or ""), "" if v is None else str(v), now, by, note[:1000]))
+                c.execute("UPDATE deliveries SET declared=? WHERE id=?", (json.dumps(kept, ensure_ascii=False), row["id"]))
+        result = verify_deliveries(self.store, self.repo_roots(), agora_lookup=self._agora_task, ids=[row["id"]])
+        after = self.store.one("SELECT id, repo, commit_sha, agora_task, implementation, evidence FROM deliveries WHERE id=?", (row["id"],))
+        proof = ((after.get("evidence") or {}).get("commit_ancestry") or {}) if after else {}
+        return {"id": row["id"], "changed": sorted(changes), "repo": after["repo"], "commit_sha": after["commit_sha"], "agora_task": after["agora_task"],
+                "implementation": after["implementation"], "status": proof.get("status"), "reason": proof.get("reason"), "via": proof.get("via"),
+                "checked": len(result["deliveries"]), "history": self.store.history_of("deliveries", row["id"])[-6:]}
 
     def _agora_task(self, task_id: int) -> dict[str, Any] | None:
         from .tree import _get
@@ -367,9 +426,10 @@ class Services:
         from . import radar
         return radar.plan(self.store, limit=limit, remember=remember, translate=self._translate)
 
-    def radar_run(self, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_ids: list[int] | None = None) -> dict[str, Any]:
+    def radar_run(self, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_ids: list[int] | None = None,
+                  web: bool = False) -> dict[str, Any]:
         from . import radar
-        return radar.run(self.store, top=top, per_gap=per_gap, add=add, gap_ids=gap_ids, translate=self._translate)
+        return radar.run(self.store, top=top, per_gap=per_gap, add=add, gap_ids=gap_ids, translate=self._translate, web=web)
 
     def check_watches(self) -> dict[str, Any]:
         """Ask every saved question again; with news (and ``watches_notify``), one family notification per question."""

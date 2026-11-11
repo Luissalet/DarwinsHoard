@@ -57,6 +57,7 @@ class RadarRunArgs(BaseModel):
     per_gap: int = Field(5, ge=1, le=20, description="Repositories per search.")
     add: bool = Field(False, description="Register the repositories Darwin did not know as discoveries (channel radar).")
     gap_ids: list[int] = Field(default_factory=list, description="Search these gaps instead of the plan's first ones.")
+    web: bool = Field(False, description="Also run the plan's web query on the keyless web search and report (or register) the pages.")
 
 
 class WatchAddArgs(BaseModel):
@@ -192,6 +193,16 @@ class ReconcileArgs(BaseModel):
     confirm_ids: list[int] = Field(default_factory=list, description="Gaps a person checked and confirms as resolved (state resuelta).")
     dismiss_ids: list[int] = Field(default_factory=list, description="Flagged gaps that are NOT answered by the capability: keep open, do not flag again.")
     by: str = Field("agent", max_length=60)
+    semantic: bool = Field(False, description="Also ask the local model whether a proven capability already does what each open gap asks, "
+                                              "by meaning and not only by name (flags it possibly stale; never closes).")
+    limit: int = Field(40, ge=1, le=200, description="With semantic: how many gaps to ask about in this run.")
+
+
+class GapsImportArgs(BaseModel):
+    use_model: bool = Field(True, description="Let the local model separate what is still wanted from what is done in the long logs "
+                                              "(Faustus's and Writer's OBJETIVOS.md). False = the cue words alone decide.")
+    days: int = Field(0, ge=0, le=3650, description="Only sections dated within this many days of the newest one (0 = 21).")
+    max_new: int = Field(0, ge=0, le=500, description="Most new gaps to take from one log in this run (0 = 60); the rest wait for the next run.")
 
 
 class SuitEvalImportArgs(BaseModel):
@@ -258,6 +269,16 @@ class IngestArgs(BaseModel):
 class SinceArgs(BaseModel):
     since: Optional[float] = Field(None, description="Epoch seconds; default: 7 days ago.")
     limit: int = Field(200, ge=1, le=1000)
+
+
+class FixDeliveryArgs(BaseModel):
+    id: int = Field(..., ge=1, description="Delivery id (darwin_source lists them; Resumen → Entregas).")
+    repo: str = Field("", max_length=200, description="Repository where the code really lives (a name the hub or an alias resolves).")
+    commit_sha: str = Field("", max_length=400, description="The commit(s) that are in main today (7-40 hex digits, comma separated).")
+    agora_task: int = Field(0, ge=0, description="The Ágora task that delivered it.")
+    clear_commit: bool = Field(False, description="The declared commit belongs to another task: drop it (the delivery keeps no commit).")
+    note: str = Field("", max_length=1000, description="Why: how you found it (patch-id, subject, Ágora task).")
+    by: str = Field("agent", max_length=60)
 
 
 class RepoAliasArgs(BaseModel):
@@ -416,6 +437,19 @@ def _mark(s: Services, a: MarkArgs) -> dict[str, Any]:
     return out
 
 
+def _reconcile(s: Services, a: ReconcileArgs) -> dict[str, Any]:
+    out = reconcile.reconcile(s.store, confirm_ids=a.confirm_ids, dismiss_ids=a.dismiss_ids, by=a.by)
+    if a.semantic:
+        out["semantic"] = reconcile.semantic(s.store, _family_chat(), limit=a.limit)
+        out.update(reconcile.listing(s.store))
+    return out
+
+
+def _family_chat():
+    from .hoard_link import family
+    return family.chat
+
+
 def _gaps(s: Services, a: Empty) -> dict[str, Any]:
     rec = reconcile.listing(s.store)
     flags = {g["id"]: g for g in rec["possibly_stale"]}
@@ -424,7 +458,7 @@ def _gaps(s: Services, a: Empty) -> dict[str, Any]:
         if g["id"] in flags:
             f = flags[g["id"]]
             g["possibly_stale"] = {"capability_key": f["capability_key"], "capability_name": f["capability_name"], "evidence": f["evidence"],
-                                   "reason": f["reason"]}
+                                   "reason": f["reason"], "matched": f["matched"]}
     return {"gaps": gaps, "open": rec["open"], "possibly_stale": rec["stale_count"]}
 
 
@@ -453,7 +487,12 @@ TOOLS: list[Tool] = [
     Tool("darwin_gaps_reconcile", _d("Flag gaps that a capability marked implemented with evidence now answers (possibly stale); list them.",
                                      "Never closes a gap by itself. confirm_ids resolves gaps a person checked; dismiss_ids keeps a flagged gap open.",
                                      "carencias obsoletas, reconciliar, ya está hecho, conciliar carencias"),
-         ReconcileArgs, ann(idempotent=True), lambda s, a: reconcile.reconcile(s.store, confirm_ids=a.confirm_ids, dismiss_ids=a.dismiss_ids, by=a.by)),
+         ReconcileArgs, ann(idempotent=True), lambda s, a: _reconcile(s, a), timeout_s=600),
+    Tool("darwin_gaps_import", _d("Bring in the gaps of every OBJETIVOS.md: lists item by item and the long logs of Faustus and Writer, "
+                                  "where the local model separates what is still wanted from what is done. Idempotent; a gap leaves with its text.",
+                                  "Each gap keeps file, section and line (watch). Without a model the cue words (falta, pendiente, sigue sin...) decide.",
+                                  "importar objetivos, carencias de faustus, carencias de writer, leer objetivos"),
+         GapsImportArgs, ann(idempotent=True), lambda s, a: s.import_gaps(use_model=a.use_model, days=a.days, max_new=a.max_new), timeout_s=900),
     Tool("darwin_capability_mark", _d("Mark a capability node as implemented with evidence (commit, test or QA file); refused without evidence.",
                                       "A capability name alone proves nothing. Evidence is what lets suits read «backed» and gaps read «possibly stale».",
                                       "marcar implementada, aportar prueba, respaldo de una capacidad"), MarkArgs, ann(idempotent=True), _mark),
@@ -499,6 +538,13 @@ TOOLS: list[Tool] = [
                                      "mapear repositorio, añadir alias, repo fusionado"),
          RepoAliasArgs, ann(idempotent=True),
          lambda s, a: s.set_repo_alias(a.name, repo=a.repo, path=a.path, subdir=a.subdir, search=a.search, remove=a.remove)),
+    Tool("darwin_delivery_fix", _d("Correct the repository, commit or Ágora task of one delivery whose declared commit cannot be found (history rewritten, "
+                                   "wrong repository) and check it again against main.",
+                                   "The values it declared are kept in the delivery and every change is written to its history. Nothing is invented: "
+                                   "give the commit you found (git log --all, patch-id, subject) and say how in note.",
+                                   "corregir entrega, arreglar commit de una entrega, entrega sin prueba"),
+         FixDeliveryArgs, ann(idempotent=True), lambda s, a: s.fix_delivery(a.id, repo=a.repo, commit_sha=a.commit_sha, agora_task=a.agora_task,
+                                                                             note=a.note, by=a.by, clear_commit=a.clear_commit), timeout_s=300),
     Tool("darwin_whatsapp_chats", _d("WhatsApp chats Faustus's bridge knows (to pick the Gittrend chat's exact JID)."),
          ChatsArgs, ann(read_only=True), lambda s, a: {"chats": s.whatsapp_chats(a.query)}),
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
@@ -546,7 +592,7 @@ TOOLS: list[Tool] = [
     Tool("darwin_radar_run", _d("Search GitHub for the plan's first gaps and report each repository as already known or new; add=true registers the new ones.",
                                 "Uses GitHub's public anonymous search (ten searches a minute). A failed search is reported and the rest go on.",
                                 "buscar repos para carencias, lanzar radar"),
-         RadarRunArgs, ann(idempotent=True), lambda s, a: s.radar_run(top=a.top, per_gap=a.per_gap, add=a.add, gap_ids=a.gap_ids or None),
+         RadarRunArgs, ann(idempotent=True), lambda s, a: s.radar_run(top=a.top, per_gap=a.per_gap, add=a.add, gap_ids=a.gap_ids or None, web=a.web),
          timeout_s=240),
     Tool("darwin_watch_add", _d("Keep a question («avísame cuando…»): Darwin asks it again every few hours and tells Luis only when the answer grows.",
                                 "The first check is the baseline; later ones report new discoveries, state changes and apps.",

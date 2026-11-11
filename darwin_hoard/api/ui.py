@@ -108,6 +108,16 @@ def gaps_reconcile(request: Request, body: Optional[dict[str, Any]] = None):
     return tool(request, "darwin_gaps_reconcile", body or {})
 
 
+@router.post("/api/deliveries/{delivery_id}/fix")
+def delivery_fix(request: Request, delivery_id: int, body: Optional[dict[str, Any]] = None):
+    return tool(request, "darwin_delivery_fix", {**(body or {}), "id": delivery_id})
+
+
+@router.post("/api/gaps/import")
+def gaps_import(request: Request, body: Optional[dict[str, Any]] = None):
+    return tool(request, "darwin_gaps_import", body or {})
+
+
 @router.get("/api/coverage")
 def coverage_get(request: Request, source_id: Optional[int] = None, text: str = ""):
     return tool(request, "darwin_coverage", {"source_id": source_id, "text": text})

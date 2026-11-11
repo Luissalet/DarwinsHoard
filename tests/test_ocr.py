@@ -60,3 +60,46 @@ def test_media_path_never_leaves_the_folder(tmp_path: Path):
     assert ocr.media_path(media, '"../secret.jpg"') is None
     assert ocr.media_path(media, '"..\\\\secret.jpg"') is None
     assert ocr.attachment_name('{"file": "ABC123.jpg"}') == "ABC123.jpg"
+
+
+def test_layout_blocks_are_read_one_by_one_and_wrapped_links_join(tmp_path: Path):
+    store = Store(tmp_path / "d.db")
+    media = tmp_path / "media"
+    media.mkdir()
+    (media / "AAA111.jpg").write_bytes(b"jpg")
+    cid = _capture(store, "w:1", '"AAA111.jpg"')
+    layout = [{"label": "Page-Header", "bbox": [0, 0, 10, 10], "text": "18:09"},
+              {"label": "Text", "bbox": [0, 20, 10, 30], "text": "1 Personal Vault Template github.com/kepano/\nkepano-obsidian"},
+              {"label": "Text", "bbox": [0, 40, 10, 50], "text": "2 JSON Canvas github.com/obsidianmd/jsoncanvas\nnext line"},
+              {"label": "Picture", "bbox": [0, 60, 10, 70], "text": ""}]
+    text = "\n".join(b["text"] for b in layout)
+
+    def fake_ocr(path):
+        return {"ok": True, "text": text, "layout": layout, "backend": "indra",
+                "engine_report": {"requested": "auto", "used": "indra", "fallback": False, "reason": ""}}
+
+    result = ocr.read_inbox(store, media, fake_ocr, repo_check=lambda r: True, repo_list=lambda o: None)
+    assert set(result["found"]) == {"https://github.com/kepano/kepano-obsidian", "https://github.com/obsidianmd/jsoncanvas"}
+    declared = store.one("SELECT declared FROM captures WHERE id=?", (cid,))["declared"]["ocr"]
+    assert declared["layout_blocks"] == 3 and [b["refs"] for b in declared["blocks"]] == [["https://github.com/kepano/kepano-obsidian"],
+                                                                                      ["https://github.com/obsidianmd/jsoncanvas"]]
+    assert "engine_fallback" not in declared
+
+
+def test_rejoin_only_joins_links_cut_at_a_slash_or_dash():
+    assert ocr.rejoin("see github.com/kepano/\nkepano-obsidian today") == "see github.com/kepano/kepano-obsidian\ntoday"
+    assert ocr.rejoin("github.com/addyosmani/agent-\nskills") == "github.com/addyosmani/agent-skills"
+    assert ocr.rejoin("curl https://imbo.dev/install\nUse it") == "curl https://imbo.dev/install\nUse it"
+    assert ocr.rejoin("plain text/\nnext") == "plain text/\nnext"
+
+
+def test_a_fallback_engine_is_recorded_on_the_capture(tmp_path: Path):
+    store = Store(tmp_path / "d.db")
+    media = tmp_path / "media"
+    media.mkdir()
+    (media / "AAA111.jpg").write_bytes(b"jpg")
+    cid = _capture(store, "w:1", '"AAA111.jpg"')
+    res = {"ok": True, "text": "nothing", "backend": "winocr", "engine_report": {"fallback": True, "reason": "indra: not installed"}}
+    ocr.read_inbox(store, media, lambda p: res, repo_check=lambda r: True)
+    declared = store.one("SELECT declared FROM captures WHERE id=?", (cid,))["declared"]["ocr"]
+    assert declared["engine_fallback"] == "indra: not installed" and "blocks" not in declared

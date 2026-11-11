@@ -135,6 +135,7 @@
         <div class="card-head"><h3>Radar por carencias</h3>
           <div class="actions"><button class="btn" id="rd-refresh" type="button">Recalcular</button>
             <label class="check"><input type="checkbox" id="rd-add"> Guardar los repos nuevos</label>
+            <label class="check"><input type="checkbox" id="rd-web" checked> Buscar también en la web</label>
             <button class="btn primary" id="rd-run" type="button">Buscar en GitHub (3 primeras)</button></div></div>
         <p class="hint">Las carencias abiertas ordenadas por lo que ayudaría buscarlas: nunca buscadas, antiguas, sin candidatos en Darwin y sin cubrir en el árbol suben. Cada una trae su búsqueda de GitHub y web; una tarea programada puede llamar a <code>darwin_radar_plan</code> y callar cuando no hay novedades.</p>
         <p class="meta" id="rd-status" role="status" aria-live="polite"></p>
