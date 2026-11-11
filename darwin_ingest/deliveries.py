@@ -29,8 +29,9 @@ _PAIR = re.compile(r'\b([0-9a-fA-F]{7,40})\s*(?:->|→|=>)\s*([0-9a-fA-F]{7,40})
 _REPO_LINE = re.compile(r"^[\s\-*•]*(?P<repo>[^:\n]{2,60}?)\s+(?:main|master)\s*:(?P<rest>.*)$", re.M)
 #: « Integrado: HoardLink main 70d1578, Tantalus main 57da1e2 y Faustus master dae07fc7 » — which repository got which id.
 _REPO_SHA = re.compile(r"(?P<repo>[A-Z][\w'’.-]*(?:\s[A-Z][\w'’.-]*){0,3})\s+(?:main|master)\s+\(?(?P<sha>[0-9a-fA-F]{7,40})\b")
-#: A resolution that closes the task without integrating it (« Cierre sin integrar », « cerrada sin integrar »).
-_NOT_INTEGRATED = re.compile(r'(?:cierre|cerrad[ao]s?)\s+sin\s+integrar|\bno\s+se\s+integr[óo]\b', re.I)
+#: A resolution that closes the task without integrating it (« Cierre sin integrar », « cerrada sin integrar »,
+#: « Descartada por acuerdo »).
+_NOT_INTEGRATED = re.compile(r'(?:cierre|cerrad[ao]s?)\s+sin\s+integrar|\bno\s+se\s+integr[óo]\b|\bdescartad[ao]s?\s+por\s+acuerdo\b', re.I)
 _CHERRY = re.compile(r'cherry picked from commit ([0-9a-fA-F]{7,40})')
 _COMMITS_LINE = re.compile(r'^Commits:\s*(.+)$', re.M)
 #: Strength of each way of proving integration, strongest first; the weakest one used names the delivery's result.
@@ -403,7 +404,7 @@ def agora_refs(delivery) -> list:
     return [int(n) for n in dict.fromkeys(_TASK_REF.findall(str(declared.get('tracker_status') or '')))]
 
 
-def verify_deliveries(store, repo_roots, agora_lookup=None):
+def verify_deliveries(store, repo_roots, agora_lookup=None, ids=None):
     """Only inspect local repositories; never fetch or checkout.
 
     ``repo_roots`` maps each repository name a delivery may use to a path, or to {'path', 'subdir', 'name'} for an app
@@ -411,6 +412,9 @@ def verify_deliveries(store, repo_roots, agora_lookup=None):
     ``agora_lookup(task_id)`` returns the hub's task document ({'task', 'messages'}) or None."""
     v = _Verifier(repo_roots, agora_lookup)
     rows = store.q('SELECT * FROM deliveries ORDER BY id')
+    if ids is not None:  # only these deliveries (after one was corrected)
+        wanted = {int(i) for i in ids}
+        rows = [r for r in rows if r['id'] in wanted]
     plan = []
     for d in rows:
         target = v.target(d.get('repo')) or v.target(d.get('agora_space'))
