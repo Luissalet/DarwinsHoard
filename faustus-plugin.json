@@ -10,6 +10,7 @@
     "dedupe-by-canonical-url",
     "proposals-per-app",
     "delivery-tracking",
+    "delivery-skill-map",
     "state-history",
     "capability-tree",
     "capability-find",

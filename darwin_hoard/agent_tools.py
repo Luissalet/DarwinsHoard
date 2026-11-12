@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import backing, coverage, query, reconcile, suit_seeds, suits, tree, views, watches
+from . import backing, coverage, query, reconcile, skill_impacts, suit_seeds, suits, tree, views, watches
 from .canon import canonical_url, extract_refs, repo_of, source_key
 from .errors import DarwinError
 from .hoard_link.agentkit import Empty, Tool, ann
@@ -19,7 +19,8 @@ from .store import IMPLEMENTATION_STATES, PROPOSAL_STATES, VERIFICATION_STATES
 
 AGENT_INSTRUCTIONS = """Darwin's Hoard keeps every discovery (GitHub repository, article, paper, video, idea) that could improve Faustus or a Hoard, where it came from (radar line, Ágora task, chat message, screenshot), what was proposed for which app, what was delivered (commit, task) and the capability tree of the family: Faustus > Hoard Hub > Hoards > absorbed modules > capabilities > tools.
 Before analysing a repository or idea, call darwin_add (or darwin_find): if it already exists you get its history and states and must not redo the work. darwin_source gives one discovery's full genealogy (captures with provenance, proposals per target app with their history, deliveries with commits). darwin_tree / darwin_capability_find answer «which app already does X» with evidence (declarada = manifest, viva = tool Faustus sees, probada = tested). darwin_propose records a proposal for a target app; darwin_set_state changes a state with history (never invent a delivered state: «integrada» needs a commit or a done Ágora task). darwin_gap_add records something Luis wants and no app does yet.
-States are separate axes: proposal (pendiente, investigando, debatida, aceptada, aplazada, descartada, cubierta), implementation per delivery (sin_implementar, parcial, integrada, sustituida), verification (documentada, probada, recomprobar, desconocida)."""
+States are separate axes: proposal (pendiente, investigando, debatida, aceptada, aplazada, descartada, cubierta), implementation per delivery (sin_implementar, parcial, integrada, sustituida), verification (documentada, probada, recomprobar, desconocida).
+darwin_skill_impacts maps implemented repository deliveries to the published skills they improve, with documented reasons, commits and separately labelled term-match suggestions. Read the procedure with darwin_skill_impact_read before documenting a contribution with darwin_skill_impact_link. The source genealogy and radar include the same map; a link never edits a skill or proves a quality improvement."""
 
 
 def _d(first: str, detail: str = "", synonyms: str = "") -> str:
@@ -99,6 +100,24 @@ class SourceArgs(BaseModel):
     id: Optional[int] = Field(None, ge=1)
     key: str = Field("", max_length=500, description="owner/repo, URL or source key.")
     radar_no: Optional[int] = Field(None, ge=0)
+
+
+class SkillImpactArgs(BaseModel):
+    source_id: Optional[int] = Field(None, ge=1)
+    target: str = Field("", max_length=60)
+    limit: int = Field(100, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
+class SkillImpactLinkArgs(BaseModel):
+    delivery_id: int = Field(..., ge=1)
+    slug: str = Field(..., min_length=1, max_length=81)
+    reason: str = Field("", max_length=2000)
+    on: bool = True
+
+
+class SkillImpactReadArgs(BaseModel):
+    slug: str = Field(..., min_length=1, max_length=81)
 
 
 class AddArgs(BaseModel):
@@ -334,6 +353,7 @@ def _source(s: Services, a: SourceArgs) -> dict[str, Any]:
     g = query.genealogy(s.store, source_id=a.id, key=a.key, radar_no=a.radar_no)
     if not g:
         raise DarwinError("not_found", "No such discovery.", "Search with darwin_find.")
+    g["skill_impacts"] = s.skill_impacts(source_id=g["source"]["id"])
     return g
 
 
@@ -463,6 +483,12 @@ def _gaps(s: Services, a: Empty) -> dict[str, Any]:
 
 
 TOOLS: list[Tool] = [
+    Tool("darwin_skill_impact_read", _d("Read a published library skill named by darwin_skill_impacts, with its full procedure and version, including skills for other apps."),
+         SkillImpactReadArgs, ann(read_only=True), lambda s, a: skill_impacts.read(s.config, a.slug)),
+    Tool("darwin_skill_impacts", _d("Which skill each implemented repository improves: documented delivery links, reasons and commits; separately labelled suggestions from current app shelves. Paginated, including unmatched deliveries."),
+         SkillImpactArgs, ann(read_only=True), lambda s, a: s.skill_impacts(**a.model_dump())),
+    Tool("darwin_skill_impact_link", _d("Document which published skill a delivery improves and how, or remove that association with on=false. Preserves commit evidence; does not edit the skill or claim it was tested."),
+         SkillImpactLinkArgs, ann(idempotent=True), lambda s, a: skill_impacts.link(s.store, s.config, **a.model_dump())),
     Tool("darwin_overview", _d("Overview: how many discoveries, proposals per state, deliveries, captures per channel, apps with most proposals, last imports."),
          Empty, ann(read_only=True), lambda s, a: query.overview(s.store)),
     Tool("darwin_find", _d("Search the discovery history with filters and order.", "Each result has its aggregate state, target apps, proposals and deliveries.",
