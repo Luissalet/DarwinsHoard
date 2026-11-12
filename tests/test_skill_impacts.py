@@ -9,6 +9,7 @@ from darwin_hoard.errors import DarwinError
 from darwin_hoard.main import create_app
 from darwin_hoard.services import Services
 from darwin_hoard.store import Store
+from darwin_hoard.agent_tools import call_tool
 
 
 def fixture(tmp_path):
@@ -85,6 +86,19 @@ def test_links_validate_source_and_reason_without_editing_skills(tmp_path):
     with pytest.raises(DarwinError):
         skill_impacts.link(store, config, delivery_id=9999, slug='image-editing', reason='A reason')
     assert skill_impacts.read(config, 'image-editing')['text'] == before
+
+
+def test_agent_pagination_keeps_the_entire_requested_page(tmp_path, monkeypatch):
+    store, config, sid, _ = fixture(tmp_path)
+    for n in range(80):
+        store.upsert_delivery(key=f'large{n}', source_id=sid, target='photos', implementation='integrada',
+                              declared={'what': 'image editing layers ' * 30})
+    store.close()
+    service = Services(config)
+    monkeypatch.setattr('darwin_hoard.tree._get', lambda *a, **k: {})
+    result = call_tool(service, 'darwin_skill_impacts', {'limit': 80})
+    assert len(result['items']) == 80 and result['total'] == 81
+    assert 'truncated' not in result
 
 
 def test_http_and_agent_genealogy_and_radar_share_links(tmp_path, monkeypatch):
