@@ -17,6 +17,21 @@ from .deps import services, tool
 router = APIRouter()
 
 
+@router.get("/api/skill-impacts")
+def skill_impacts(request: Request, source_id: Optional[int] = None, target: str = "", limit: int = 100, offset: int = 0):
+    return tool(request, "darwin_skill_impacts", {"source_id": source_id, "target": target, "limit": max(1, min(limit, 500)), "offset": max(0, offset)})
+
+
+@router.post("/api/skill-impacts/link")
+def skill_impact_link(request: Request, body: dict[str, Any]):
+    return tool(request, "darwin_skill_impact_link", body)
+
+
+@router.get("/api/skill-impacts/skill")
+def skill_impact_read(request: Request, slug: str):
+    return tool(request, "darwin_skill_impact_read", {"slug": slug})
+
+
 class CallBody(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
     arguments: Optional[dict[str, Any]] = None

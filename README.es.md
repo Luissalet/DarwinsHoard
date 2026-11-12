@@ -1,5 +1,11 @@
 # Darwin's Hoard
 
+Investigaciones muestra qué skill mejora cada repo con una entrega declarada
+integrada: vínculos con motivo y commit, sugerencias por revisar y casos sin skill
+identificada. Permite leer la skill completa y documentar o quitar el vínculo.
+El radar y la genealogía devuelven el mismo mapa por API y MCP.
+[Uso y límites del mapa de skills](docs/SKILL-IMPACTS.md).
+
 Guarda cada hallazgo que podría mejorar Faustus o algún Hoard (un repo de GitHub, un artículo, un paper, un reel, una idea suelta) con su origen, qué se propuso y para qué app, qué se entregó, y el árbol de capacidades de toda la familia. Responde dos preguntas antes de gastar tiempo en un enlace: *¿esto ya lo vimos y qué pasó con ello?* y *¿qué app hace ya esto?*
 
 Puerto **5233**, id `darwin`. Forma parte de la familia Hoard: copiloto de Faustus, ventana en el Hoard Hub y puente MCP.

@@ -424,12 +424,28 @@ class Services:
 
     def radar_plan(self, *, limit: int = 10, remember: bool = True) -> dict[str, Any]:
         from . import radar
-        return radar.plan(self.store, limit=limit, remember=remember, translate=self._translate)
+        out = radar.plan(self.store, limit=limit, remember=remember, translate=self._translate)
+        out["implemented_skill_impacts"] = self.skill_impacts()
+        return out
+
+    def skill_impacts(self, **kwargs) -> dict[str, Any]:
+        from . import skill_impacts
+        from .tree import _get
+        shelves = None
+        try:
+            overview = _get(self.config.hub_url + "/api/skills/overview", timeout=4)
+            if overview.get("ok"):
+                shelves = {a["id"]: a["skills"] for a in overview.get("apps", [])}
+        except Exception:  # Hub closed: published app-specific procedures still provide suggestions
+            pass
+        return skill_impacts.report(self.store, self.config, shelves=shelves, **kwargs)
 
     def radar_run(self, *, top: int = 3, per_gap: int = 5, add: bool = False, gap_ids: list[int] | None = None,
                   web: bool = False) -> dict[str, Any]:
         from . import radar
-        return radar.run(self.store, top=top, per_gap=per_gap, add=add, gap_ids=gap_ids, translate=self._translate, web=web)
+        out = radar.run(self.store, top=top, per_gap=per_gap, add=add, gap_ids=gap_ids, translate=self._translate, web=web)
+        out["implemented_skill_impacts"] = self.skill_impacts()
+        return out
 
     def check_watches(self) -> dict[str, Any]:
         """Ask every saved question again; with news (and ``watches_notify``), one family notification per question."""
