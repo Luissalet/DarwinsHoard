@@ -26,7 +26,7 @@
         const line = node('div'); line.className = 'item';
         line.append(node('strong', skill.slug), node('p', skill.reason));
         line.append(node('p', skill.status === 'suggested' ? 'Sugerencia por coincidencia de términos; no acredita una mejora.' :
-          `${skill.available ? 'Skill publicada' : 'Skill no disponible'}${skill.source_changed ? ' · Su texto ha cambiado desde el vínculo' : ''}`));
+          `${skill.available ? 'Skill publicada' : 'Skill no disponible'}${skill.on_shelf === false ? ' · No está en la estantería de esta app' : ''}${skill.source_changed ? ' · Su texto ha cambiado desde el vínculo' : ''}`));
         const read = node('button', 'Leer skill'); read.type = 'button'; read.className = 'btn small';
         read.onclick = async () => {
           try { const r = await request(skill.skill_url); output.textContent = r.text; output.hidden = false; }
