@@ -47,6 +47,7 @@ def test_candidates_are_target_specific_and_documented_links_preserve_proof(tmp_
     assert item['status'] == 'suggested' and item['skills'] == []
     assert [r['slug'] for r in item['suggestions']] == ['image-editing']
     assert item['suggestions'][0]['on_shelf'] is None
+    assert skill_impacts.report(store, config, shelves={'photos': []})['items'][0]['suggestions'] == []
     skill_impacts.link(store, config, delivery_id=did, slug='image-editing', reason='Adds editable layers to the image procedure.')
     row = skill_impacts.report(store, config, source_id=sid, shelves={'photos': ['image-editing']})['items'][0]
     assert row['status'] == 'documented' and row['commit_ancestry']['status'] == 'integrated'

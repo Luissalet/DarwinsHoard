@@ -74,7 +74,7 @@ def report(store, config, *, source_id: int | None = None, target: str = "", lim
             if skill["slug"] in {x["slug"] for x in linked}:
                 continue
             on_shelf = skill["slug"] in shelves.get(d["target"], []) if shelves is not None else None
-            if not on_shelf and d["target"] not in skill["apps"]:
+            if (shelves is not None and not on_shelf) or (shelves is None and d["target"] not in skill["apps"]):
                 continue
             shared = sorted(terms & set(coverage.terms_of(skill["slug"].replace("-", " ") + " " + skill["description"] + " " + " ".join(skill["tags"]), max_terms=40)))
             if len(shared) < 2:
