@@ -484,9 +484,9 @@ def _gaps(s: Services, a: Empty) -> dict[str, Any]:
 
 TOOLS: list[Tool] = [
     Tool("darwin_skill_impact_read", _d("Read a published library skill named by darwin_skill_impacts, with its full procedure and version, including skills for other apps."),
-         SkillImpactReadArgs, ann(read_only=True), lambda s, a: skill_impacts.read(s.config, a.slug)),
+         SkillImpactReadArgs, ann(read_only=True), lambda s, a: skill_impacts.read(s.config, a.slug), capped=False),
     Tool("darwin_skill_impacts", _d("Which skill each implemented repository improves: documented delivery links, reasons and commits; separately labelled suggestions from current app shelves. Paginated, including unmatched deliveries."),
-         SkillImpactArgs, ann(read_only=True), lambda s, a: s.skill_impacts(**a.model_dump())),
+         SkillImpactArgs, ann(read_only=True), lambda s, a: s.skill_impacts(**a.model_dump()), capped=False),
     Tool("darwin_skill_impact_link", _d("Document which published skill a delivery improves and how, or remove that association with on=false. Preserves commit evidence; does not edit the skill or claim it was tested."),
          SkillImpactLinkArgs, ann(idempotent=True), lambda s, a: skill_impacts.link(s.store, s.config, **a.model_dump())),
     Tool("darwin_overview", _d("Overview: how many discoveries, proposals per state, deliveries, captures per channel, apps with most proposals, last imports."),
