@@ -219,21 +219,57 @@ class Store:
                     c.execute("INSERT OR IGNORE INTO source_aliases(alias, source_id) VALUES (?,?)", (row["key"], sid))
                     renamed += 1
                     continue
-                tid = int(target["id"])
-                for table in ("captures", "ideas", "proposals", "deliveries"):
-                    c.execute(f"UPDATE {table} SET source_id=? WHERE source_id=?", (tid, sid))
-                c.execute("INSERT OR IGNORE INTO capture_sources(capture_id, source_id) "
-                          "SELECT capture_id, ? FROM capture_sources WHERE source_id=?", (tid, sid))
-                c.execute("DELETE FROM capture_sources WHERE source_id=?", (sid,))
-                c.execute("UPDATE OR IGNORE source_aliases SET source_id=? WHERE source_id=?", (tid, sid))
-                c.execute("DELETE FROM source_aliases WHERE source_id=?", (sid,))
-                c.execute("INSERT OR IGNORE INTO source_aliases(alias, source_id) VALUES (?,?)", (row["key"], tid))
-                c.execute("UPDATE sources SET first_seen=MIN(first_seen, (SELECT first_seen FROM sources WHERE id=?)), "
-                          "last_seen=MAX(last_seen, (SELECT last_seen FROM sources WHERE id=?)) WHERE id=?", (sid, sid, tid))
-                c.execute("DELETE FROM sources WHERE id=?", (sid,))
-                c.execute("UPDATE sources SET captures=(SELECT COUNT(*) FROM capture_sources WHERE source_id=?) WHERE id=?", (tid, tid))
+                self._fold_source(c, sid, int(target["id"]), row["key"])
                 merged += 1
         return {"renamed": renamed, "merged": merged}
+
+    @staticmethod
+    def _fold_source(c: sqlite3.Connection, sid: int, tid: int, alias: str) -> None:
+        """Move everything of source ``sid`` (captures, ideas, proposals, deliveries, aliases) to ``tid`` and delete it;
+        ``alias`` stays as a name of ``tid`` so lookups by the old key still land."""
+        for table in ("captures", "ideas", "proposals", "deliveries"):
+            c.execute(f"UPDATE {table} SET source_id=? WHERE source_id=?", (tid, sid))
+        c.execute("INSERT OR IGNORE INTO capture_sources(capture_id, source_id) "
+                  "SELECT capture_id, ? FROM capture_sources WHERE source_id=?", (tid, sid))
+        c.execute("DELETE FROM capture_sources WHERE source_id=?", (sid,))
+        c.execute("UPDATE OR IGNORE source_aliases SET source_id=? WHERE source_id=?", (tid, sid))
+        c.execute("DELETE FROM source_aliases WHERE source_id=?", (sid,))
+        c.execute("INSERT OR IGNORE INTO source_aliases(alias, source_id) VALUES (?,?)", (alias, tid))
+        c.execute("UPDATE sources SET first_seen=MIN(first_seen, (SELECT first_seen FROM sources WHERE id=?)), "
+                  "last_seen=MAX(last_seen, (SELECT last_seen FROM sources WHERE id=?)) WHERE id=?", (sid, sid, tid))
+        c.execute("DELETE FROM sources WHERE id=?", (sid,))
+        c.execute("UPDATE sources SET captures=(SELECT COUNT(*) FROM capture_sources WHERE source_id=?) WHERE id=?", (tid, tid))
+
+    def correct_source(self, wrong_id: int, into_id: int, *, by: str = "", note: str = "") -> dict[str, Any]:
+        """Mark a source as the mistaken reading of another (an OCR cut «NousResearch/hern» of the real repository): its captures,
+        proposals and deliveries move to the right one, its key stays as an alias, and what the wrong one said (title, summary,
+        key) is kept in the right one's ``meta.corrections`` and in the history. When both have a proposal for the same app the
+        right one's stays and the other's deliveries and history are folded into it. Returns the counts."""
+        if wrong_id == into_id:
+            raise ValueError("A source cannot correct itself.")
+        with self.tx() as c:
+            wrong = c.execute("SELECT * FROM sources WHERE id=?", (wrong_id,)).fetchone()
+            good = c.execute("SELECT * FROM sources WHERE id=?", (into_id,)).fetchone()
+            if wrong is None or good is None:
+                raise KeyError(f"Discovery {wrong_id if wrong is None else into_id} does not exist.")
+            folded = 0
+            for dup in c.execute("SELECT w.id AS wid, g.id AS gid FROM proposals w JOIN proposals g ON g.target=w.target AND g.source_id=? "
+                                 "WHERE w.source_id=?", (into_id, wrong_id)).fetchall():
+                c.execute("UPDATE deliveries SET proposal_id=? WHERE proposal_id=?", (dup["gid"], dup["wid"]))
+                c.execute("UPDATE history SET entity_id=? WHERE entity='proposals' AND entity_id=?", (dup["gid"], dup["wid"]))
+                c.execute("DELETE FROM proposals WHERE id=?", (dup["wid"],))
+                folded += 1
+            moved = {"proposals": c.execute("SELECT COUNT(*) FROM proposals WHERE source_id=?", (wrong_id,)).fetchone()[0],
+                     "deliveries": c.execute("SELECT COUNT(*) FROM deliveries WHERE source_id=?", (wrong_id,)).fetchone()[0],
+                     "captures": c.execute("SELECT COUNT(*) FROM capture_sources WHERE source_id=?", (wrong_id,)).fetchone()[0]}
+            meta = json.loads(good["meta"] or "{}")
+            meta.setdefault("corrections", []).append({"id": wrong_id, "key": wrong["key"], "title": wrong["title"], "url": wrong["url"],
+                                                       "summary": wrong["summary"], "at": time.time(), "by": by, "note": note})
+            self._fold_source(c, wrong_id, into_id, wrong["key"])
+            c.execute("UPDATE sources SET meta=?, updated=? WHERE id=?", (_j(meta), time.time(), into_id))
+            c.execute("INSERT INTO history(entity, entity_id, field, old, new, at, by, note) VALUES ('sources', ?, 'correction', ?, ?, ?, ?, ?)",
+                      (into_id, wrong["key"], good["key"], time.time(), by, note or f"#{wrong_id} was a misreading of #{into_id}"))
+        return {"source_id": into_id, "corrected": wrong_id, "key": wrong["key"], "moved": moved, "proposals_folded": folded}
 
     def _alias(self, key: str) -> Optional[int]:
         row = self.one("SELECT source_id FROM source_aliases WHERE alias=?", (key,))

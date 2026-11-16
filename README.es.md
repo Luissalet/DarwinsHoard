@@ -61,8 +61,8 @@ Un nodo cuenta como respaldado solo tras `darwin_capability_mark` con al menos u
 - Una entrega se puede corregir (repositorio, commit, tarea de Ágora); la declaración anterior se conserva y la entrega se vuelve a comprobar al instante.
 
 **Captura y lectura**
-- **Bandeja**: las capturas sin fuente todavía (una nota de chat, una captura de pantalla) nunca se descartan. **Leer capturas (OCR)** lee las capturas con el OCR de la familia, enlaza las URL que encuentra y los nombres `owner/repo` que GitHub confirma; también se ejecuta tras una sincronización de chat.
-- **Cuentas para leer posts**: conecta X, Instagram, Threads, TikTok, Reddit, Facebook o YouTube; Links abre una ventana de inicio de sesión en este ordenador y la persona inicia sesión (ninguna contraseña pasa por Darwin). **Leer posts** lee los posts que hay detrás de los hallazgos y los convierte en capturas con título legible y resumen.
+- **Bandeja**: las capturas sin fuente todavía (una nota de chat, una captura de pantalla) nunca se descartan. **Leer capturas (OCR)** lee las capturas con el OCR de la familia, enlaza las URL que encuentra y los nombres `owner/repo` que GitHub confirma; también se ejecuta tras una sincronización de chat. Cada repositorio de GitHub que muestra una imagen se comprueba: un nombre cortado en la captura o mal leído se completa con los repositorios del propietario cuando solo encaja uno y, si no, no se toma como fuente. Si Kafka está parado, se pide al Hub que lo arranque y, si sigue sin responder, el modelo de visión de la familia lee la imagen. Un hallazgo que era una mala lectura de otro se marca como su corrección: sus capturas, propuestas y entregas pasan al correcto.
+- **Cuentas para leer posts**: conecta X, Instagram, Threads, TikTok, Reddit, Facebook o YouTube; Links abre una ventana de inicio de sesión en este ordenador y la persona inicia sesión (ninguna contraseña pasa por Darwin). **Leer posts** lee los posts que hay detrás de los hallazgos y los convierte en capturas con título legible y resumen; en un reel o un post de vídeo se pide además el digest de vídeo de Links y su ficha pasa a ser el resumen del hallazgo.
 - El triaje con el modelo local marca el ruido y propone estados.
 
 **En Faustus**
@@ -76,7 +76,7 @@ Un nodo cuenta como respaldado solo tras `darwin_capability_mark` con al menos u
 |---|---|
 | Ficheros del radar | `RADAR_GITTREND.md`, `IMPLEMENTACION_RADAR.md`, `GUIA_IMPLEMENTACION.md` (carpeta configurada en ajustes) y las entradas exportadas a `radar-ideas.md`. Idempotente; una línea editada pasa a ser una segunda aparición. |
 | Ágora | Las tareas de cada espacio que citan `radar #N` o llevan una etiqueta `darwin:<id>` se convierten en propuestas para la app del espacio; una tarea hecha con commits añade una entrega declarada. |
-| WhatsApp «Gittrend» | Solo lectura, a través del puente de WhatsApp de Faustus, página a página con cursor; no se envía ni se marca nada como leído. La cobertura es lo que conserva el puente (60 días). Si el puente está parado, la sincronización lo arranca a través de Faustus y vuelve a leer. Si el Hub ha movido Faustus a una Spark, las llamadas lo siguen. Las capturas van a la bandeja y al OCR. |
+| WhatsApp «Gittrend» | Solo lectura, a través del puente de WhatsApp de Faustus, página a página con cursor; no se envía ni se marca nada como leído. La cobertura es lo que conserva el puente (60 días). Si el puente está parado, la sincronización lo arranca a través de Faustus y vuelve a leer. Si el Hub ha movido Faustus a una Spark, las llamadas lo siguen. Las capturas van a la bandeja y al OCR. Darwin solo lee mientras está en marcha: al arrancar lee lo que el chat dijo entretanto, y la página Resumen indica cuántos días lleva el chat sin sincronizar. |
 | Links' Hoard | Cada pocas horas y con `darwin_import_links`: los enlaces con la etiqueta `darwin` y todos los repositorios de GitHub guardados allí. |
 | Otras apps y agentes | `darwin_ingest` y `darwin_add`. |
 | Árbol de capacidades | `/api/apps` del hub, `/api/tools/catalog` de Faustus y los manifiestos `faustus-plugin.json` cuando el hub no está. |
@@ -94,7 +94,7 @@ o arráncalo desde el Hoard Hub, o ejecuta `python -m darwin_hoard`. Requiere Py
 El manifiesto del plugin es `faustus-plugin.json`. El puente MCP (`mcp_server.py`, stdio) reenvía cada llamada a la app en marcha con el token de `data/mcp-token`. Nunca arranca la app: mientras Darwin está parado lista las herramientas desde el catálogo del paquete y una llamada responde `not_running`.
 
 Herramientas MCP, por grupos:
-- Hallazgos: `darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_ingest`, `darwin_propose`, `darwin_set_state`, `darwin_changes_since`, `darwin_inbox`, `darwin_triage`, `darwin_discuss`, `darwin_proposals`, `darwin_saved_filters`, `darwin_ask`, `darwin_coverage`.
+- Hallazgos: `darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_ingest`, `darwin_propose`, `darwin_set_state`, `darwin_changes_since`, `darwin_inbox`, `darwin_triage`, `darwin_discuss`, `darwin_proposals`, `darwin_saved_filters`, `darwin_ask`, `darwin_coverage`, `darwin_source_correct`.
 - Árbol y carencias: `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_capability_mark`, `darwin_gaps`, `darwin_gap_add`, `darwin_gaps_reconcile`, `darwin_gaps_import`.
 - Entregas: `darwin_verify_deliveries`, `darwin_delivery_fix`, `darwin_repo_aliases`, `darwin_repo_alias_set`.
 - Trajes: `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_suit_import_eval`.

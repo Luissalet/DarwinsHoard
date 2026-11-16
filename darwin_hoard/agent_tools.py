@@ -48,6 +48,13 @@ class CoverageArgs(BaseModel):
     text: str = Field("", max_length=4000, description="Or a free text: an idea, a gap, a repository description.")
 
 
+class SourceCorrectArgs(BaseModel):
+    source_id: int = Field(..., ge=1, description="The mistaken discovery (an OCR cut or misreading of a repository or link).")
+    into_id: int = Field(..., ge=1, description="The discovery it was meant to be.")
+    note: str = Field("", max_length=500)
+    by: str = Field("agent", max_length=60)
+
+
 class RadarPlanArgs(BaseModel):
     limit: int = Field(10, ge=1, le=100)
     remember: bool = Field(True, description="Store this plan as the baseline, so the next one only reports what changed (notify).")
@@ -258,6 +265,7 @@ class LoginArgs(BaseModel):
 
 class PostsArgs(BaseModel):
     limit: int = Field(30, ge=1, le=300)
+    digest: bool = Field(True, description="Also have Links watch the videos of the reels read (video_digest) and keep the digest as the source's summary.")
 
 
 class DiscussArgs(BaseModel):
@@ -397,6 +405,16 @@ def _propose(s: Services, a: ProposeArgs) -> dict[str, Any]:
     return {"proposal": s.store.one("SELECT * FROM proposals WHERE id=?", (pid,)), "history": s.store.history_of("proposals", pid)}
 
 
+def _source_correct(s: Services, a: SourceCorrectArgs) -> dict[str, Any]:
+    try:
+        out = s.store.correct_source(a.source_id, a.into_id, by=a.by, note=a.note)
+    except KeyError as exc:
+        raise DarwinError("not_found", str(exc.args[0]), "Search with darwin_find.") from exc
+    except ValueError as exc:
+        raise DarwinError("invalid", str(exc)) from exc
+    return {**out, "source": _source(s, SourceArgs(id=a.into_id))}
+
+
 def _set_state(s: Services, a: SetStateArgs) -> dict[str, Any]:
     allowed = {("proposals", "state"): PROPOSAL_STATES, ("deliveries", "implementation"): IMPLEMENTATION_STATES,
                ("deliveries", "verification"): VERIFICATION_STATES}
@@ -489,8 +507,9 @@ TOOLS: list[Tool] = [
          SkillImpactArgs, ann(read_only=True), lambda s, a: s.skill_impacts(**a.model_dump()), capped=False),
     Tool("darwin_skill_impact_link", _d("Document which published skill a delivery improves and how, or remove that association with on=false. Preserves commit evidence; does not edit the skill or claim it was tested."),
          SkillImpactLinkArgs, ann(idempotent=True), lambda s, a: skill_impacts.link(s.store, s.config, **a.model_dump())),
-    Tool("darwin_overview", _d("Overview: how many discoveries, proposals per state, deliveries, captures per channel, apps with most proposals, last imports."),
-         Empty, ann(read_only=True), lambda s, a: query.overview(s.store)),
+    Tool("darwin_overview", _d("Overview: how many discoveries, proposals per state, deliveries, captures per channel, apps with most proposals, last imports, "
+                               "and how many days the WhatsApp chat has gone without being read (whatsapp.days_without_sync)."),
+         Empty, ann(read_only=True), lambda s, a: {**query.overview(s.store), "whatsapp": s.sync_status()}),
     Tool("darwin_find", _d("Search the discovery history with filters and order.", "Each result has its aggregate state, target apps, proposals and deliveries.",
                            "historial, buscar repo, radar, qué hay de"), FindArgs, ann(read_only=True), _find),
     Tool("darwin_source", _d("One discovery's genealogy: captures with provenance, proposals per app with history, deliveries with commits.",
@@ -499,6 +518,11 @@ TOOLS: list[Tool] = [
                           synonyms="apuntar, guardar repo, nuevo descubrimiento"), AddArgs, ann(idempotent=True), _add),
     Tool("darwin_propose", _d("Record (or update) a proposal: this discovery for this app, with reason and Ágora task."),
          ProposeArgs, ann(idempotent=True), _propose),
+    Tool("darwin_source_correct", _d("Mark a discovery as the mistaken reading of another (a repository or link the OCR cut or garbled): its captures, "
+                                     "proposals and deliveries move to the right one, and the wrong one's key, title and summary are kept in the right one's history.",
+                                     "So the wrong one no longer shows as «sin propuesta». Both ids come from darwin_find.",
+                                     "es una corrección de, fusionar fuentes, unir descubrimientos, nombre cortado por el OCR"),
+         SourceCorrectArgs, ann(idempotent=True), _source_correct),
     Tool("darwin_set_state", _d("Change a proposal state or a delivery's implementation/verification, keeping the history."),
          SetStateArgs, ann(idempotent=True), _set_state),
     Tool("darwin_tree", _d("The capability tree from a node: Faustus > Hub > Hoards > modules > capabilities > tools, with evidence and state.",
@@ -593,8 +617,10 @@ TOOLS: list[Tool] = [
                                     "Never ask for or type a password.", "conectar cuenta, iniciar sesión"),
          LoginArgs, ann(), lambda s, a: s.account_login(a.site, finish=a.finish, cancel=a.cancel), timeout_s=60),
     Tool("darwin_read_posts", _d("Read the social posts behind discoveries (X, Instagram, Threads…) with the signed-in sessions and link the repositories and links inside.",
-                                 "Each post is read once; a login wall stops the run and names the site.", "leer tuits, leer posts, de qué repo habla"),
-         PostsArgs, ann(idempotent=True), lambda s, a: s.read_posts(limit=a.limit), timeout_s=900),
+                                 "Each post is read once; a login wall stops the run and names the site. A reel or video post is also digested by Links "
+                                 "(a few per run): the digest becomes the source's summary and the repositories it names are linked.",
+                                 "leer tuits, leer posts, de qué repo habla, resumir reels"),
+         PostsArgs, ann(idempotent=True), lambda s, a: s.read_posts(limit=a.limit, digest=a.digest), timeout_s=900),
     Tool("darwin_discuss", _d("Open (or show) the Ágora thread that debates one proposal, with the discovery's genealogy; an optional note is added.",
                               "One thread per proposal, kept on it; Darwin writes as the agent darwin.", "debatir, discutir, ágora"),
          DiscussArgs, ann(), lambda s, a: s.discuss(a.proposal_id, a.note), timeout_s=60),
@@ -603,7 +629,8 @@ TOOLS: list[Tool] = [
                              "repartir, clasificar, triaje, proponer apps"),
          TriageArgs, ann(idempotent=True), lambda s, a: s.triage(channel=a.channel, limit=a.limit), timeout_s=900),
     Tool("darwin_read_screenshots", _d("Read the unread screenshots in the inbox with the family's OCR and link the repositories and links they show.",
-                                       "URLs are taken as read; bare owner/name only when GitHub confirms the repository. An image is read once.",
+                                       "A repository GitHub does not know is completed from its owner's repositories when exactly one fits, otherwise it is not taken. "
+                                       "If Kafka is stopped the hub is asked to start it, and failing that the vision model reads the picture. An image is read once.",
                                        "ocr, capturas, fotos, pantallazos"),
          OcrArgs, ann(idempotent=True), lambda s, a: s.ocr_inbox(limit=a.limit), timeout_s=900),
     Tool("darwin_coverage", _d("Does the family already do this? A discovery or a free text against the capability tree: covered, partial or gap, with the matching apps and nodes.",

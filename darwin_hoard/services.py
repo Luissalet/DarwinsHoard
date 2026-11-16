@@ -61,6 +61,7 @@ class Services:
         self._thread: threading.Thread | None = None
         self._tree_lock = threading.Lock()
         self._sync_locks: dict[str, threading.Lock] = {}
+        self._caught_up = False
 
     # ------------------------------------------------------------------ lifecycle
 
@@ -75,6 +76,10 @@ class Services:
     def _loop(self) -> None:
         self._stop.wait(5)
         while not self._stop.is_set():
+            try:
+                self.catch_up_whatsapp()
+            except Exception:  # noqa: BLE001 - the bridge or Faustus is closed: it is tried again next period
+                log.exception("whatsapp catch-up")
             try:
                 last = self.store.get_meta("tree_refreshed_at", 0) or 0
                 if time.time() - last > 60 * max(5, int(self.settings["tree_refresh_minutes"])):
@@ -378,6 +383,32 @@ class Services:
         finally:
             lock.release()
 
+    def sync_status(self) -> dict[str, Any]:
+        """How long the chat has gone unread: Darwin only reads while it runs, so a stopped Darwin leaves a gap the page names."""
+        chat = self.settings.get("whatsapp_chat") or ""
+        last = self.store.get_meta("whatsapp_last_sync", 0) or 0
+        newest = (self.store.one("SELECT MAX(at) AS t FROM captures WHERE channel='whatsapp'") or {}).get("t") or 0
+        reference = last or newest
+        days = round(max(0.0, time.time() - reference) / 86400, 1) if reference else None
+        return {"configured": "@" in chat, "chat": self.settings.get("whatsapp_chat_name") or chat, "last_sync": last or None,
+                "newest_capture": newest or None, "days_without_sync": days,
+                "stale": bool("@" in chat and days is not None and days >= 1),
+                "catch_up": self.store.get_meta("whatsapp_catch_up")}
+
+    def catch_up_whatsapp(self) -> Optional[dict[str, Any]]:
+        """Once per run, as soon as Darwin starts: read what the chat said while Darwin was stopped. The pass is resumable, so
+        a gap longer than one run's pages is finished by the next periods; nothing happens until a chat is chosen."""
+        if self._caught_up or "@" not in (self.settings.get("whatsapp_chat") or ""):
+            return None
+        gap = self.sync_status()["days_without_sync"]
+        result = self.sync_whatsapp()
+        if result.get("busy"):
+            return None
+        self._caught_up = bool(result.get("pass_complete"))     # a longer gap continues at the next period
+        info = {"at": time.time(), "gap_days": gap, "created": result.get("created", 0), "pass_complete": result.get("pass_complete")}
+        self.store.set_meta("whatsapp_catch_up", info)
+        return info
+
     def _hub_io(self):
         from .hoard_link import family
         from .hoard_link._hubclient import fetch_detailed
@@ -504,7 +535,7 @@ class Services:
             raise RuntimeError(res.get("error") or json.dumps(res.get("result") or {}, ensure_ascii=False)[:300])
         return self.accounts()
 
-    def read_posts(self, *, limit: int = 30) -> dict[str, Any]:
+    def read_posts(self, *, limit: int = 30, digest: bool = True) -> dict[str, Any]:
         from . import social
         from .hoard_link import family
         lock = self._sync_locks.setdefault("posts", threading.Lock())
@@ -512,7 +543,7 @@ class Services:
             return {"busy": True, **self.posts_job}
         try:
             self.posts_job = {"running": True, "done": 0, "total": 0, "started": time.time()}
-            result = social.read_posts(self.store, self.links_call, limit=limit,
+            result = social.read_posts(self.store, self.links_call, limit=limit, digest=digest,
                                        on_progress=lambda d, t: self.posts_job.update(done=d, total=t))
             self.posts_job = {"running": False, "finished": time.time(), **result}
             return result
@@ -621,6 +652,38 @@ class Services:
                 self.store.drop_capture_declared(row["id"], "ocr")
         return got
 
+    def start_app(self, app: str, *, wait_s: float = 45.0) -> bool:
+        """Ask the hub to start an app a feature needs (the hub itself is never started from here) and wait until it answers.
+        Reading a screenshot is the explicit request that makes Kafka worth starting."""
+        from .hoard_link import _famsvc
+        hub, headers, fetch = self._hub_io()
+        status, body, _ = fetch(f"{hub}/api/apps/{app}/start", {"wait": True}, method="POST", timeout=wait_s + 15.0, headers=headers)
+        if status is None or status >= 400 or (isinstance(body, dict) and body.get("ok") is False):
+            return False                    # the hub does not know the app, or could not start it: do not wait for it
+        deadline = time.time() + wait_s
+        while True:
+            _famsvc.forget_availability()
+            if _famsvc.available(app, timeout=3.0):
+                return True
+            if time.time() >= deadline:
+                return False
+            time.sleep(2)
+
+    def _vision_ocr(self, path: str) -> dict[str, Any]:
+        """A screenshot read by the family's vision model (the Sparks, through the hub): its text, without a layout."""
+        from . import ocr
+        from .hoard_link import family
+        try:
+            data = Path(path).read_bytes()
+        except OSError as exc:
+            return {"ok": False, "error": str(exc), "kind": "vision"}
+        res = family.chat([{"role": "user", "content": ocr.VISION_PROMPT}], capability="vision", images=[data], timeout=150.0,
+                          max_tokens=3000, temperature=0)
+        text = str(res.get("text") or "").strip()
+        if res.get("ok") and text:
+            return {"ok": True, "text": text, "backend": f"vision:{res.get('model') or 'family'}"}
+        return {"ok": False, "error": str(res.get("detail") or res.get("error") or "the vision model returned no text"), "kind": "vision"}
+
     def ocr_inbox(self, *, limit: int = 60) -> dict[str, Any]:
         """Read the unread screenshots of the inbox with the family's OCR and link what they show (see :mod:`ocr`)."""
         from . import ocr
@@ -638,8 +701,10 @@ class Services:
             def progress(done: int, total: int) -> None:
                 self.ocr_job.update(done=done, total=total)
 
-            result = ocr.read_inbox(self.store, self.media_dir, lambda path: fam_docs.ocr_image(path, lang="en", timeout_s=180),
-                                    limit=limit, on_progress=progress)
+            engine = ocr.chain(lambda path: fam_docs.ocr_image(path, lang="en", timeout_s=180),
+                               start_app=lambda: self.start_app(fam_docs.KAFKA), vision=self._vision_ocr)
+            result = ocr.read_inbox(self.store, self.media_dir, engine, limit=limit, on_progress=progress,
+                                    repo_search=ocr.github_search_repos)
             self.ocr_job = {"running": False, "finished": time.time(), **result}
             return result
         except Exception as exc:  # noqa: BLE001 - surfaced to the page, never kills the app

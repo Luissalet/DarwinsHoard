@@ -25,8 +25,10 @@
 | What is most worth a look | `darwin_find` with `order: fitness` (score and reasons per discovery) |
 | Links saved for Darwin | `darwin_import_links` (tag `darwin` in Links, or any GitHub repository) |
 | Darwin in the Brain | `darwin_brain_export` (Notes/Darwin, linked notes; also every few hours) |
-| Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` |
-| Screenshots with no link | `darwin_read_screenshots` (family OCR; URLs taken, `owner/repo` only when GitHub confirms it; each image read once) |
+| Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` (a reel or video post is also digested by Links; the card becomes the summary) |
+| Screenshots with no link | `darwin_read_screenshots` (family OCR; every GitHub repository checked, a cut or misread name completed from the owner's repositories when exactly one fits, otherwise not taken; Kafka stopped → the Hub starts it, failing that the vision model reads the picture; each image read once) |
+| A discovery that was a misreading of another | `darwin_source_correct` (captures, proposals and deliveries move to the right one; the wrong key, title and summary are kept) |
+| How long the chat has gone unsynced | `darwin_overview` (`whatsapp.days_without_sync`); Darwin catches up on start |
 | Re-read the legacy radar files and Ágora | `darwin_import_legacy` (idempotent) |
 | «¿Qué encargos sabes resolver?» (trajes) | `darwin_suits` (estado: proposed, partial, backed, evaluated), `darwin_suit_get` (operaciones con su prueba), `darwin_suit_save`, `darwin_suits_seed` |
 | Marcar una capacidad como implementada | `darwin_capability_mark` (exige prueba: commit, test o fichero de QA; sin ella se rechaza) |
@@ -34,7 +36,7 @@
 | Carencias desde los diarios de objetivos de Faustus y Writer | `darwin_gaps_import` (idempotente; cada carencia guarda fichero, sección y línea; `log_pending` = candidatas por clasificar) |
 | Corregir el repositorio, el commit o la tarea de una entrega | `darwin_delivery_fix` (guarda lo declarado antes, la vuelve a comprobar; `clear_commit` para un commit que nunca existió) |
 | Resultados de evaluar un traje en Pygmalion | `darwin_suit_import_eval` (JSON `pygmalion-suit-eval/1` o ruta del fichero) |
-| "Does an app already do this?" for a discovery or a text | `darwin_coverage` (covered / partial / gap with the matching apps and nodes; explains, never blocks) |
+| "Does an app already do this?" for a discovery or a text | `darwin_coverage` (covered / partial / gap with the matching apps and nodes; matches node names, not descriptions, and ignores words that name nodes in many apps; explains, never blocks) |
 | What the radar should look for next | `darwin_radar_plan` (gaps ranked, GitHub and web queries, candidates already held; `notify: false` = nothing new, stay quiet) |
 | Search GitHub for the top gaps | `darwin_radar_run` (`add: true` registers the new repositories; link collections are left out; `web: true` also searches the keyless web and reports or registers the pages) |
 | «Avísame cuando…» | `darwin_watch_add`, `darwin_watches`, `darwin_watches_check` (notify only with news), `darwin_watch_update` |

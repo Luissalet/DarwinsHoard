@@ -5,7 +5,12 @@ the repository or article is inside the text. Links reads the post with the brow
 (``read_post``; ``site_login`` opens the sign-in window, and nobody but him types the password). The text becomes a capture
 of the post (channel ``post``), the post's own source gets a readable title and summary, and the repositories and links in
 it become sources linked to that capture: GitHub repositories and any non-social link as they are, bare ``owner/name``
-only when GitHub confirms it. A login wall stops the run and names the site to connect."""
+only when GitHub confirms it. A login wall stops the run and names the site to connect.
+
+A post that is a video (an Instagram reel, a TikTok) says even less in its caption: Links' ``video_digest`` watches it on the PC, and
+Darwin keeps the digest's card as the source's summary (the caption stays in ``meta.video_digest.caption``) and takes the
+repositories and links it names, with the same checks as the post's text. Every pass digests the reels it has read and not
+digested yet, a few at a time because a digest takes minutes."""
 
 from __future__ import annotations
 
@@ -25,6 +30,11 @@ POST_PATTERNS = (r"^url:https://x\.com/[^/]+/status/\d+", r"^url:https://instagr
                  r"^url:https://linkedin\.com/(posts|feed/update)/")
 SOCIAL = re.compile(r"^https?://([a-z0-9-]+\.)?(x|twitter|instagram|threads|facebook|tiktok|reddit|bsky|linkedin)\.(com|net|app)/", re.I)
 SITES = ("x", "instagram", "threads", "tiktok", "reddit", "facebook")
+VIDEO_PATTERNS = (r"^url:https://instagram\.com/(reel|reels|tv)/", r"^url:https://tiktok\.com/@[^/]+/video/")
+DIGEST_PER_PASS = 2          # digests take minutes: the rest wait for the next pass
+DIGEST_WAIT_S = 240          # how long one call waits for Links; a longer digest is found done by the next pass
+DIGEST_ATTEMPTS = 2
+DIGEST_CHARS = 1500          # what stays as the source's summary
 
 
 def site_of(url: str) -> Optional[str]:
@@ -35,6 +45,22 @@ def site_of(url: str) -> Optional[str]:
 
 def is_post(key: str) -> bool:
     return any(re.match(p, key or "") for p in POST_PATTERNS)
+
+
+def is_video(key: str) -> bool:
+    return any(re.match(p, key or "") for p in VIDEO_PATTERNS)
+
+
+def pending_digests(store: Store, limit: int = DIGEST_PER_PASS) -> list[dict[str, Any]]:
+    """Video posts already read whose video was never digested (or whose digest failed fewer than DIGEST_ATTEMPTS times)."""
+    rows = store.q("SELECT * FROM sources WHERE key LIKE 'url:%' AND json_extract(meta,'$.post') IS NOT NULL "
+                   "AND json_extract(meta,'$.post.error') IS NULL ORDER BY last_seen DESC")
+    out = []
+    for r in rows:
+        done = (r.get("meta") or {}).get("video_digest") or {}
+        if is_video(r["key"]) and done.get("status") not in ("done", "partial") and int(done.get("attempts") or 0) < DIGEST_ATTEMPTS:
+            out.append(r)
+    return out[:limit]
 
 
 def pending(store: Store, limit: int = 30) -> list[dict[str, Any]]:
@@ -51,8 +77,61 @@ def _set_meta(store: Store, source: dict[str, Any], key: str, value: Any, **fiel
         c.execute(f"UPDATE sources SET {', '.join(f'{k}=?' for k in sets)} WHERE id=?", (*sets.values(), source["id"]))
 
 
+def digest_video(store: Store, call: Call, src: dict[str, Any], *, repo_check: Callable[[str], Optional[bool]] = github_repo_exists,
+                 cache: Optional[dict[str, Optional[bool]]] = None) -> dict[str, Any]:
+    """Have Links watch the video of one post (``video_digest``, card level) and keep what it says: the card becomes the source's
+    summary (the caption it replaces is kept in ``meta.video_digest.caption``) and the repositories and links the video names
+    become sources linked to a capture of the digest. Returns ``{"status", "refs"}`` or ``{"error"}``; an unreachable Links
+    is reported as ``{"error", "down": True}`` so the run stops."""
+    res = call("links", "video_digest", {"url": src["url"], "level": "card", "wait": True, "timeout_s": DIGEST_WAIT_S, "max_chars": 8000},
+               timeout=DIGEST_WAIT_S + 60.0)
+    body = res.get("result") if isinstance(res.get("result"), dict) else {}
+    if not res.get("ok") or not body:
+        err = str(res.get("error") or body.get("error") or "Links did not answer")
+        return {"error": err, "down": "not reachable" in err or res.get("status") in (502, 503)}
+    status = str(body.get("status") or "")
+    prior = ((src.get("meta") or {}).get("video_digest") or {})
+    still = status in ("queued", "running")        # Links goes on in the background: the next pass finds it done, no attempt lost
+    record: dict[str, Any] = {"at": time.time(), "status": status, "attempts": int(prior.get("attempts") or 0) + (0 if still else 1)}
+    text = str(body.get("text") or "").strip()
+    if status not in ("done", "partial") or not text:
+        record["error"] = str(body.get("error") or body.get("detail") or f"the digest is {status or 'empty'}")[:300]
+        if body.get("login"):
+            record["login"] = body["login"]
+        _set_meta(store, src, "video_digest", record)
+        return {"status": status, "error": record["error"]}
+    cid, _ = store.add_capture(capture_key="digest:" + hashlib.sha256((src["key"] + "\n" + text).encode("utf-8")).hexdigest()[:24],
+                               channel="post", text=text[:8000], url=src["url"], at=time.time(), author="links",
+                               provenance={"read_by": "links.video_digest", "source_key": src["key"], "link_id": body.get("link_id")})
+    store.link_capture(cid, src["id"])
+    cache = {} if cache is None else cache
+    accepted: list[str] = []
+    checks = 0
+    for ref in extract_refs(text):
+        if ref["kind"] == "candidate":
+            repo = ref["raw"]
+            if repo not in cache:
+                if checks >= MAX_CANDIDATES:
+                    continue
+                checks += 1
+                cache[repo] = repo_check(repo)
+            if not cache[repo]:
+                continue
+            sid = store.upsert_source(repo=repo)
+        else:
+            if SOCIAL.match(ref["url"]) or ref["key"] == src["key"]:
+                continue
+            sid = store.upsert_source(url=ref["url"])
+        store.link_capture(cid, sid)
+        accepted.append(ref["url"])
+    record.update(link_id=body.get("link_id"), refs=accepted, caption=(src.get("summary") or "")[:600])
+    _set_meta(store, src, "video_digest", record, summary=re.sub(r"\s+", " ", text).strip()[:DIGEST_CHARS])
+    return {"status": status, "refs": accepted}
+
+
 def read_posts(store: Store, call: Call, *, limit: int = 30, repo_check: Callable[[str], Optional[bool]] = github_repo_exists,
-               on_progress: Optional[Callable[[int, int], None]] = None) -> dict[str, Any]:
+               on_progress: Optional[Callable[[int, int], None]] = None, digest: bool = True,
+               digest_limit: int = DIGEST_PER_PASS) -> dict[str, Any]:
     todo = pending(store, limit)
     read = linked = 0
     found: list[str] = []
@@ -122,9 +201,21 @@ def read_posts(store: Store, call: Call, *, limit: int = 30, repo_check: Callabl
         read += 1
         linked += 1 if accepted else 0
         found.extend(accepted)
+    digested = 0
+    if digest:
+        for src in pending_digests(store, digest_limit):
+            got = digest_video(store, call, store.source(src["id"]) or src, repo_check=repo_check, cache=cache)
+            if got.get("error"):
+                errors.append({"source_id": src["id"], "error": got["error"][:200]})
+                if got.get("down"):
+                    break
+                continue
+            digested += 1
+            found.extend(got.get("refs") or [])
+            linked += 1 if got.get("refs") else 0
     if on_progress:
         on_progress(len(todo), len(todo))
-    out: dict[str, Any] = {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": skipped}
+    out: dict[str, Any] = {"read": read, "linked": linked, "found": found, "errors": errors, "remaining": skipped, "digested": digested}
     if blocked:
         sites = ", ".join(dict.fromkeys(blocked))
         out.update(login_needed=blocked[0], login_needed_sites=list(dict.fromkeys(blocked)),

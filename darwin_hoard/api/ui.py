@@ -39,7 +39,8 @@ class CallBody(BaseModel):
 
 @router.get("/api/overview")
 def overview(request: Request):
-    return query.overview(services(request).store)
+    s = services(request)
+    return {**query.overview(s.store), "whatsapp": s.sync_status()}
 
 
 @router.get("/api/discoveries")

@@ -93,11 +93,20 @@ function bars(el, entries, onClick) {
   if (onClick) el.querySelectorAll('.bar').forEach((b) => b.addEventListener('click', () => onClick(b.dataset.k)));
 }
 
+// How long the chat has gone unread (Darwin only reads while it runs; at start it catches up on its own).
+function waGap(wa) {
+  const el = $('wa-gap');
+  if (!wa || !wa.stale) { el.hidden = true; return; }
+  const d = Math.floor(wa.days_without_sync);
+  el.hidden = false;
+  el.textContent = `Llevas ${d} ${d === 1 ? 'día' : 'días'} sin sincronizar el chat${wa.chat ? ` «${wa.chat}»` : ''}. Pulsa «Sincronizar» para recuperar lo que falta.`;
+}
 async function loadOverview() {
   loadAccounts(); postsStatus();
   try {
     const ov = await api('/api/overview');
     const c = ov.counts;
+    waGap(ov.whatsapp);
     $('kpis').innerHTML = [
       [c.sources, 'descubrimientos'], [c.captures, 'apariciones'], [c.proposals, 'propuestas'], [c.deliveries, 'entregas'],
       [c.capabilities, 'nodos del árbol'], [c.gaps, 'carencias'], [ov.captures_last_7_days, 'nuevas esta semana (sin el histórico)'],
@@ -183,7 +192,7 @@ $('wa-find').addEventListener('click', async () => {
 $('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value, whatsapp_chat_name: $('wa-chat').selectedOptions[0]?.textContent || '' } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
 $('wa-sync').addEventListener('click', async () => {
   const b = $('wa-sync'); b.disabled = true; b.textContent = 'Sincronizando…';
-  try { const r = await call('darwin_sync_whatsapp', {}); $('wa-status').textContent = r.busy ? 'Ya hay una sincronización en marcha.' : `${r.created} mensajes nuevos, ${r.existing} ya guardados, ${r.sources} enlaces o repos. Cubre lo que guarda el puente, no todo el historial del teléfono.`; loadInbox(); }
+  try { const r = await call('darwin_sync_whatsapp', {}); $('wa-status').textContent = r.busy ? 'Ya hay una sincronización en marcha.' : `${r.created} mensajes nuevos, ${r.existing} ya guardados, ${r.sources} enlaces o repos. Cubre lo que guarda el puente, no todo el historial del teléfono.`; loadInbox(); loadOverview(); }
   catch (e) { $('wa-status').textContent = e.hint ? `${e.message} ${e.hint}` : e.message; } finally { b.disabled = false; b.textContent = 'Sincronizar'; }
 });
 
@@ -304,6 +313,8 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
         <div class="debate" data-debate="${p.id}">${p.agora_thread ? `<button class="btn small" data-thread="${p.id}">Ver debate (Ágora #${p.agora_thread})</button>` : `<button class="btn small" data-discuss="${p.id}">Debatir en el Ágora</button>`}</div></div>`).join('') || '<div class="empty">Sin propuestas.</div>'}
       <div class="inline-form"><select id="new-target"><option value="">Proponer para…</option>${Object.keys(state.names).sort((a, b) => appName(a).localeCompare(appName(b))).map((a) => `<option value="${esc(a)}">${esc(appName(a))}</option>`).join('')}</select>
         <input id="new-reason" placeholder="Por qué"><button class="btn small" id="new-propose">Proponer</button></div>
+      <div class="inline-form"><input id="fix-into" inputmode="numeric" aria-label="Número del hallazgo correcto" placeholder="Nº del hallazgo correcto"><button class="btn small" id="fix-source" type="button" title="Esta fuente es una mala lectura de otra: sus apariciones, propuestas y entregas pasan a la correcta">Es una corrección de…</button></div>
+      ${Array.isArray(meta.corrections) && meta.corrections.length ? `<div class="hist">Corregido: ${meta.corrections.map((c) => `#${c.id} ${esc(c.key)}${c.note ? ` (${esc(c.note)})` : ''}`).join(' · ')}</div>` : ''}
       <h4>Entregas (${g.deliveries.length})</h4>
       ${g.deliveries.map((d) => `<div class="item"><div class="head">${appChip(d.target)}${chip(d.implementation)}<span class="chip">${esc(VERIF_LABEL[d.verification] || d.verification)}</span>
           <span class="meta">${esc(RELATION_LABEL[d.relation] || d.relation)}</span></div>
@@ -328,6 +339,12 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
     $('new-propose').addEventListener('click', async () => {
       const target = $('new-target').value; if (!target) return toast('Elige la app.', 'err');
       try { await call('darwin_propose', { source_id: id, target, reason: $('new-reason').value }); toast('Propuesta guardada.'); openDetail(id); loadHistory(); } catch (e) { fail(e); }
+    });
+    $('fix-source').addEventListener('click', async () => {
+      const into = parseInt($('fix-into').value, 10);
+      if (!into || into === id) return toast('Escribe el número del hallazgo correcto.', 'err');
+      if (!confirm(`¿Marcar este hallazgo como una mala lectura del #${into}? Sus apariciones, propuestas y entregas pasarán a ese.`)) return;
+      try { await call('darwin_source_correct', { source_id: id, into_id: into, by: 'luis' }); toast(`Fusionado en el #${into}.`); state.selected = into; loadHistory(); openDetail(into); loadOverview(); } catch (e) { fail(e); }
     });
     for (const draft of drafts) {
       const field = el.querySelector(draft.selector);

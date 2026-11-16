@@ -30,7 +30,7 @@ def test_screenshots_are_read_once_and_only_confirmed_repos_link(tmp_path: Path)
         return {"ok": True, "text": texts[Path(path).name], "backend": "fake"}
 
     exists = {"microsoft/markitdown": True, "and/or": False}
-    result = ocr.read_inbox(store, media, fake_ocr, repo_check=lambda r: exists.get(r, False))
+    result = ocr.read_inbox(store, media, fake_ocr, repo_check=lambda r: exists.get(r, False), repo_list=lambda owner: None)
     assert result["read"] == 2 and result["linked"] == 1 and result["missing"] == 1
     assert set(result["found"]) == {"https://github.com/microsoft/markitdown", "https://x.com/u/status/5"}
     keys = {r["key"] for r in store.q("SELECT key FROM sources")}

@@ -61,8 +61,8 @@ A node counts as backed only after `darwin_capability_mark` with at least one ev
 - A delivery can be corrected (repository, commit, Ágora task); the old declaration is kept and the delivery is rechecked at once.
 
 **Capture and reading**
-- **Bandeja**: captures with no source yet (a chat note, a screenshot) are never dropped. **Leer capturas (OCR)** reads screenshots with the family's OCR, links the URLs it finds and the `owner/repo` names GitHub confirms; it also runs after a chat sync.
-- **Cuentas para leer posts**: connect X, Instagram, Threads, TikTok, Reddit, Facebook or YouTube; Links opens a sign-in window on this computer and the person signs in (no password passes through Darwin). **Leer posts** reads the posts behind discoveries and turns them into captures with a readable title and summary.
+- **Bandeja**: captures with no source yet (a chat note, a screenshot) are never dropped. **Leer capturas (OCR)** reads screenshots with the family's OCR, links the URLs it finds and the `owner/repo` names GitHub confirms; it also runs after a chat sync. Every GitHub repository a picture shows is checked: a name the picture cut or the engine misread is completed from the owner's repositories when exactly one fits, and otherwise it is not taken as a source. If Kafka is stopped, the Hub is asked to start it and, failing that, the family's vision model reads the picture. A discovery that was a misreading of another can be marked as its correction: its captures, proposals and deliveries move to the right one.
+- **Cuentas para leer posts**: connect X, Instagram, Threads, TikTok, Reddit, Facebook or YouTube; Links opens a sign-in window on this computer and the person signs in (no password passes through Darwin). **Leer posts** reads the posts behind discoveries and turns them into captures with a readable title and summary; for a reel or video post, Links' video digest is requested too and its card becomes the discovery's summary.
 - Triage with the local model marks noise and proposes states.
 
 **In Faustus**
@@ -76,7 +76,7 @@ A node counts as backed only after `darwin_capability_mark` with at least one ev
 |---|---|
 | Radar files | `RADAR_GITTREND.md`, `IMPLEMENTACION_RADAR.md`, `GUIA_IMPLEMENTACION.md` (folder set in settings) and the entries exported to `radar-ideas.md`. Idempotent; an edited line becomes a second appearance. |
 | Ágora | Tasks of every space that cite `radar #N` or carry a `darwin:<id>` label become proposals for the space's app; a done task with commits adds a declared delivery. |
-| WhatsApp «Gittrend» | Read only, through Faustus's WhatsApp bridge, page by page with a cursor; nothing is sent or marked as read. Coverage is what the bridge keeps (60 days). If the bridge is stopped, the sync starts it through Faustus and reads again. When the Hub has moved Faustus to a Spark, the calls follow it. Screenshots go to the inbox and the OCR. |
+| WhatsApp «Gittrend» | Read only, through Faustus's WhatsApp bridge, page by page with a cursor; nothing is sent or marked as read. Coverage is what the bridge keeps (60 days). If the bridge is stopped, the sync starts it through Faustus and reads again. When the Hub has moved Faustus to a Spark, the calls follow it. Screenshots go to the inbox and the OCR. Darwin only reads while it runs: on start it reads what the chat said in the meantime, and the Resumen page says how many days the chat has gone unsynced. |
 | Links' Hoard | Every few hours and on `darwin_import_links`: links tagged `darwin` and every GitHub repository saved there. |
 | Other apps and agents | `darwin_ingest` and `darwin_add`. |
 | Capability tree | The hub's `/api/apps`, Faustus's `/api/tools/catalog`, and the `faustus-plugin.json` manifests when the hub is down. |
@@ -94,7 +94,7 @@ or start it from the Hoard Hub, or run `python -m darwin_hoard`. Requires Python
 The plugin manifest is `faustus-plugin.json`. The MCP bridge (`mcp_server.py`, stdio) proxies every call to the running app with the token in `data/mcp-token`. It never starts the app: while Darwin is stopped it lists the tools from the package's catalogue and a call answers `not_running`.
 
 MCP tools, by group:
-- Discoveries: `darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_ingest`, `darwin_propose`, `darwin_set_state`, `darwin_changes_since`, `darwin_inbox`, `darwin_triage`, `darwin_discuss`, `darwin_proposals`, `darwin_saved_filters`, `darwin_ask`, `darwin_coverage`.
+- Discoveries: `darwin_overview`, `darwin_find`, `darwin_source`, `darwin_add`, `darwin_ingest`, `darwin_propose`, `darwin_set_state`, `darwin_changes_since`, `darwin_inbox`, `darwin_triage`, `darwin_discuss`, `darwin_proposals`, `darwin_saved_filters`, `darwin_ask`, `darwin_coverage`, `darwin_source_correct`.
 - Tree and gaps: `darwin_tree`, `darwin_capability_find`, `darwin_tree_refresh`, `darwin_capability_mark`, `darwin_gaps`, `darwin_gap_add`, `darwin_gaps_reconcile`, `darwin_gaps_import`.
 - Deliveries: `darwin_verify_deliveries`, `darwin_delivery_fix`, `darwin_repo_aliases`, `darwin_repo_alias_set`.
 - Suits: `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_suit_import_eval`.
