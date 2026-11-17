@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
+from . import replies
 from .canon import canonical_url, repo_key, source_key
 from .store import OPEN_GAP_SQL, Store
 
@@ -107,7 +108,8 @@ def proof_of(deliveries: list[dict[str, Any]]) -> str:
 
 def find(store: Store, *, query: str = "", state: str = "", target: str = "", channel: str = "", kind: str = "",
          pinned: Optional[bool] = None, radar_from: Optional[int] = None, radar_to: Optional[int] = None,
-         order: str = "recent", limit: int = 50, offset: int = 0, with_fitness: bool = False) -> dict[str, Any]:
+         order: str = "recent", limit: int = 50, offset: int = 0, with_fitness: bool = False,
+         commented: Optional[bool] = None) -> dict[str, Any]:
     """Sources with their proposals summarised. ``state`` filters on the aggregate or on any proposal state;
     ``target`` on any proposal or delivery target; ``channel`` on any capture channel."""
     where, args = ["1=1"], []
@@ -139,6 +141,9 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
     if kind:
         where.append("s.kind=?")
         args.append(kind)
+    if commented is not None:
+        where.append(("" if commented else "NOT ") + "EXISTS (SELECT 1 FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE cs.source_id=s.id "
+                     f"AND {replies.HAS_REPLY} AND {replies.FROM_ME})")
     if pinned is not None:
         where.append("(json_extract(s.meta, '$.pinned') IS " + ("1)" if pinned else "NULL OR json_extract(s.meta, '$.pinned')=0)"))
     if radar_from is not None:
@@ -159,13 +164,17 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
         if state and state != agg and state not in {x["state"] for x in p} and state not in {x["implementation"] for x in d}:
             continue
         items.append(_summary(r, p, d, agg))
+    said = replies.counts_by_source(store, [i["id"] for i in items])
+    for it in items:
+        it["luis_comments"] = said.get(it["id"], {}).get("count", 0)
+        it["luis_comment"] = said.get(it["id"], {}).get("line", "")
     if order == "fitness" or with_fitness:
         from . import fitness as fit
         gaps = fit.gap_terms(store)
         texts = fit.texts_by_source(store, [i["id"] for i in items])
         by_id = {r["id"]: r for r in rows}
         for it in items:
-            f = fit.score(by_id[it["id"]], it["state"], text=texts.get(it["id"], ""), gaps=gaps)
+            f = fit.score(by_id[it["id"]], it["state"], text=texts.get(it["id"], ""), gaps=gaps, luis_comments=it.get("luis_comments", 0))
             it["fitness"], it["fitness_reasons"] = f["score"], f["reasons"]
         if order == "fitness":
             items.sort(key=lambda i: -i["fitness"])
@@ -221,9 +230,13 @@ def genealogy(store: Store, *, source_id: Optional[int] = None, key: str = "", r
     ideas = store.q("SELECT * FROM ideas WHERE source_id=?", (sid,))
     agg = _aggregate(props, dels)
     from . import fitness as fit
-    fitness = fit.score(src, agg, text=fit.texts_by_source(store, [sid]).get(sid, ""), gaps=fit.gap_terms(store))
+    comments = replies.comments_of(store, sid)
+    luis = [c for c in comments if c["from_luis"]]
+    fitness = fit.score(src, agg, text=fit.texts_by_source(store, [sid]).get(sid, ""), gaps=fit.gap_terms(store), luis_comments=len(luis))
+    for cap in caps:
+        cap["reply"] = replies.describe(cap)
     return {"proof": proof_of(dels), "source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props,
-            "deliveries": dels, "fitness": fitness}
+            "deliveries": dels, "fitness": fitness, "comments": comments, "luis_comments": len(luis)}
 
 
 def overview(store: Store) -> dict[str, Any]:
@@ -285,4 +298,6 @@ def inbox(store: Store, *, channel: str = "", limit: int = 100, offset: int = 0)
     sql = f"FROM captures c WHERE {' AND '.join(where)}"
     total = store.one(f"SELECT COUNT(*) AS n {sql}", args)["n"]
     rows = store.q(f"SELECT c.* {sql} ORDER BY c.at DESC LIMIT ? OFFSET ?", [*args, limit, offset])
+    for row in rows:
+        row["reply"] = replies.describe(row)      # a comment whose quoted message Darwin does not hold still says what it answers
     return {"total": total, "items": rows}

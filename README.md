@@ -76,7 +76,7 @@ A node counts as backed only after `darwin_capability_mark` with at least one ev
 |---|---|
 | Radar files | `RADAR_GITTREND.md`, `IMPLEMENTACION_RADAR.md`, `GUIA_IMPLEMENTACION.md` (folder set in settings) and the entries exported to `radar-ideas.md`. Idempotent; an edited line becomes a second appearance. |
 | Ágora | Tasks of every space that cite `radar #N` or carry a `darwin:<id>` label become proposals for the space's app; a done task with commits adds a declared delivery. |
-| WhatsApp «Gittrend» | Read only, through Faustus's WhatsApp bridge, page by page with a cursor; nothing is sent or marked as read. Coverage is what the bridge keeps (60 days). If the bridge is stopped, the sync starts it through Faustus and reads again. When the Hub has moved Faustus to a Spark, the calls follow it. Screenshots go to the inbox and the OCR. Darwin only reads while it runs: on start it reads what the chat said in the meantime, and the Resumen page says how many days the chat has gone unsynced. |
+| WhatsApp «Gittrend» | Read only, through Faustus's WhatsApp bridge, page by page with a cursor; nothing is sent or marked as read. Coverage is what the bridge keeps (60 days). If the bridge is stopped, the sync starts it through Faustus and reads again. When the Hub has moved Faustus to a Spark, the calls follow it. A reply that quotes a message is kept with what it quotes and linked to the same discoveries, so Luis's comment shows next to the discovery («Luis: … (en respuesta a …)») in the list, the detail and the inbox; discoveries he commented on can be filtered, rank higher, and their comment is the main context of triage. Screenshots go to the inbox and the OCR. Darwin only reads while it runs: on start it reads what the chat said in the meantime, and the Resumen page says how many days the chat has gone unsynced. |
 | Links' Hoard | Every few hours and on `darwin_import_links`: links tagged `darwin` and every GitHub repository saved there. |
 | Other apps and agents | `darwin_ingest` and `darwin_add`. |
 | Capability tree | The hub's `/api/apps`, Faustus's `/api/tools/catalog`, and the `faustus-plugin.json` manifests when the hub is down. |
@@ -99,7 +99,7 @@ MCP tools, by group:
 - Deliveries: `darwin_verify_deliveries`, `darwin_delivery_fix`, `darwin_repo_aliases`, `darwin_repo_alias_set`.
 - Suits: `darwin_suits`, `darwin_suit_get`, `darwin_suit_save`, `darwin_suit_delete`, `darwin_suits_seed`, `darwin_suit_import_eval`.
 - Research: `darwin_radar_plan`, `darwin_radar_run`, `darwin_watch_add`, `darwin_watches`, `darwin_watches_check`, `darwin_watch_update`.
-- Capture and reading: `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_read_screenshots`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_import_links`, `darwin_import_legacy`.
+- Capture and reading: `darwin_whatsapp_chats`, `darwin_sync_whatsapp`, `darwin_comments`, `darwin_read_screenshots`, `darwin_accounts`, `darwin_account_login`, `darwin_read_posts`, `darwin_import_links`, `darwin_import_legacy`.
 - Faustus: `darwin_brain_export`, `darwin_panel`.
 
 The REST API mirrors these under `/api/` (`/api/coverage`, `/api/radar/plan`, `/api/radar/run`, `/api/watches`, `/api/proposals`, `/api/filters`, `/api/panel`, `/api/suits`, `/api/evaluations`, `/api/capabilities/mark`, `/api/gaps`, `/api/deliveries/{id}/fix`). From PowerShell, scheduled agents call `darwin.ps1 <tool> -ArgsFile args.json` (UTF-8 JSON) and `darwin.ps1 -List`. Radar instructions are in [docs/RADAR.md](docs/RADAR.md).

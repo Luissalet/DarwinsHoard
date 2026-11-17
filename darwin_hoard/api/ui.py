@@ -45,11 +45,17 @@ def overview(request: Request):
 
 @router.get("/api/discoveries")
 def discoveries(request: Request, q: str = "", state: str = "", target: str = "", channel: str = "", kind: str = "",
-                pinned: Optional[bool] = None, radar_from: Optional[int] = None, radar_to: Optional[int] = None,
+                pinned: Optional[bool] = None, commented: Optional[bool] = None, radar_from: Optional[int] = None, radar_to: Optional[int] = None,
                 order: str = "recent", limit: int = 50, offset: int = 0):
     return tool(request, "darwin_find", {"query": q, "state": state, "target": target, "channel": channel, "kind": kind,
-                                         "pinned": pinned, "radar_from": radar_from, "radar_to": radar_to, "order": order,
+                                         "pinned": pinned, "commented": commented, "radar_from": radar_from, "radar_to": radar_to, "order": order,
                                          "limit": max(1, min(limit, 500)), "offset": max(0, offset)})
+
+
+@router.get("/api/comments")
+def comments(request: Request, source_id: Optional[int] = None, q: str = "", from_luis: bool = True, limit: int = 50, offset: int = 0):
+    return tool(request, "darwin_comments", {"source_id": source_id, "query": q, "from_luis": from_luis,
+                                             "limit": max(1, min(limit, 500)), "offset": max(0, offset)})
 
 
 @router.get("/api/discoveries/{source_id}")

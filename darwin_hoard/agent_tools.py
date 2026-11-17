@@ -7,7 +7,7 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
-from . import backing, coverage, query, reconcile, skill_impacts, suit_seeds, suits, tree, views, watches
+from . import backing, coverage, query, reconcile, replies, skill_impacts, suit_seeds, suits, tree, views, watches
 from .canon import canonical_url, extract_refs, repo_of, source_key
 from .errors import DarwinError
 from .hoard_link.agentkit import Empty, Tool, ann
@@ -34,6 +34,7 @@ class FindArgs(BaseModel):
     channel: str = Field("", max_length=30, description="Capture channel: radar, radar-ideas, tracker, guide, agora, whatsapp, links, talos, agent, manual.")
     kind: str = Field("", max_length=20)
     pinned: Optional[bool] = Field(None, description="Only what Luis marked himself (📌).")
+    commented: Optional[bool] = Field(None, description="true = only discoveries Luis commented on in the chat by quoting them (the ones he cares most about); false = the rest.")
     radar_from: Optional[int] = Field(None, ge=0, le=100000)
     radar_to: Optional[int] = Field(None, ge=0, le=100000)
     order: Literal["recent", "oldest", "radar", "radar_desc", "captures", "title", "fitness"] = Field(
@@ -243,6 +244,14 @@ class ImportArgs(BaseModel):
     agora: bool = True
 
 
+class CommentsArgs(BaseModel):
+    source_id: Optional[int] = Field(None, ge=1, description="Only the comments linked to this discovery.")
+    query: str = Field("", max_length=200, description="Words in the comment or in the message it answers.")
+    from_luis: bool = Field(True, description="Only Luis's comments (false = also what other people of the group answered).")
+    limit: int = Field(50, ge=1, le=500)
+    offset: int = Field(0, ge=0)
+
+
 class InboxArgs(BaseModel):
     channel: str = Field("", max_length=30)
     limit: int = Field(100, ge=1, le=500)
@@ -285,6 +294,8 @@ class OcrArgs(BaseModel):
 class SyncArgs(BaseModel):
     chat: str = Field("", max_length=200, description="Exact JID; empty = the chat chosen in settings.")
     max_pages: int = Field(50, ge=1, le=500)
+    from_start: bool = Field(False, description="Forget the cursor and read every page the bridge retains again: stored captures are completed "
+                                                "(the message each reply quotes, and the link to its discovery) and never duplicated.")
 
 
 class IngestArgs(BaseModel):
@@ -395,6 +406,13 @@ def _add(s: Services, a: AddArgs) -> dict[str, Any]:
     return {"capture_id": cid, "capture_created": created, "sources": results}
 
 
+def _comments(s: Services, a: CommentsArgs) -> dict[str, Any]:
+    if a.source_id:
+        items = replies.comments_of(s.store, a.source_id, only_luis=a.from_luis)
+        return {"total": len(items), "items": items[a.offset:a.offset + a.limit]}
+    return replies.comments(s.store, from_luis=a.from_luis, query=a.query, limit=a.limit, offset=a.offset)
+
+
 def _propose(s: Services, a: ProposeArgs) -> dict[str, Any]:
     src = s.store.source(a.source_id)
     if not src:
@@ -402,7 +420,11 @@ def _propose(s: Services, a: ProposeArgs) -> dict[str, Any]:
     pid = s.store.upsert_proposal(key=f"{src['key']}->{a.target}", source_id=a.source_id, target=a.target, state=a.state,
                                   origin="agent", reason=a.reason, capability_key=a.capability, agora_space=a.agora_space,
                                   agora_task=a.agora_task, by="agent")
-    return {"proposal": s.store.one("SELECT * FROM proposals WHERE id=?", (pid,)), "history": s.store.history_of("proposals", pid)}
+    out = {"proposal": s.store.one("SELECT * FROM proposals WHERE id=?", (pid,)), "history": s.store.history_of("proposals", pid)}
+    luis = replies.comments_of(s.store, a.source_id, only_luis=True)
+    if luis:        # what Luis said about it is the main context of the proposal: shown, so the reason can rest on it
+        out["luis_comments"] = [c["line"] for c in luis]
+    return out
 
 
 def _source_correct(s: Services, a: SourceCorrectArgs) -> dict[str, Any]:
@@ -599,7 +621,12 @@ TOOLS: list[Tool] = [
          ChatsArgs, ann(read_only=True), lambda s, a: {"chats": s.whatsapp_chats(a.query)}),
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
                                     "Read only: it never sends or marks anything as read.", "gittrend, sincronizar whatsapp"),
-         SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages), timeout_s=600),
+         SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages, from_start=a.from_start), timeout_s=600),
+    Tool("darwin_comments", _d("Comments of Luis in the chat that quote a message («Luis: … (en respuesta a …)»), each with the discoveries it is linked to.",
+                               "A reply to a reel or link belongs to that discovery: it says why he sent it and for which app. Use it as the main context "
+                               "before proposing or triaging; darwin_source and darwin_find (commented) show the same per discovery.",
+                               "comentarios de Luis, respuestas citadas, qué dijo Luis de, por qué lo mandó"),
+         CommentsArgs, ann(read_only=True), _comments),
     Tool("darwin_ask", _d("Answer a question in plain words from the capability tree, the discoveries and the gaps, citing them.",
                           "Retrieval runs locally; the answer is written by the family's local model. Without a model the material is returned.",
                           "pregunta, preguntar, qué tenemos, quién hace"),

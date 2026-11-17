@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 
+from darwin_hoard import replies
 from darwin_hoard.canon import extract_refs
 
 
@@ -12,7 +13,8 @@ def _digest(value):
 
 def ingest_batch(store, records, *, channel='manual'):
     """Caller supplies stable occurrence keys. Replay also repairs unfinished links."""
-    result = {'created': 0, 'existing': 0, 'captures': [], 'sources': []}
+    result = {'created': 0, 'existing': 0, 'captures': [], 'sources': [], 'replies': 0}
+    quoting = []
     for record in records:
         key = record.get('capture_key')
         if not isinstance(key, str) or not key:
@@ -24,12 +26,21 @@ def ingest_batch(store, records, *, channel='manual'):
             declared=record.get('declared') or {}, url=record.get('url') or '')
         result['created' if created else 'existing'] += 1
         result['captures'].append(cid)
+        if replies.record(store, cid, record.get('reply_to')):
+            result['replies'] += 1
+        if record.get('reply_to'):
+            quoting.append(cid)
         text = (record.get('text') or '') + '\n' + (record.get('url') or '')
         for ref in extract_refs(text):
             existing = store.source_by_key(ref['key'])
             sid = existing['id'] if existing else store.upsert_source(url=ref['url'], meta={'identity_evidence': 'candidate' if ref['kind'] == 'candidate' else 'url', 'github_verified': False})
             store.link_capture(cid, sid)
             result['sources'].append(sid)
+    # A reply is linked to what it quotes; a quoted message that arrives in this batch (or later) resolves the replies waiting for it.
+    waiting = [r['id'] for r in store.q("SELECT c.id FROM captures c WHERE " + replies.HAS_REPLY + " AND c.channel=? AND "
+                                        "json_extract(c.declared,'$.reply_to.capture_id') IS NULL", (channel,))] if channel == 'whatsapp' else []
+    linked = replies.relink(store, sorted(set(quoting) | set(waiting))) if quoting or waiting else {'linked': 0}
+    result['reply_links'] = linked['linked']
     result['sources'] = sorted(set(result['sources']))
     return result
 
@@ -63,6 +74,7 @@ def sync_whatsapp_page(store, client, *, account, chat, limit=200):
             'attachment': json.dumps(message.get('media') or message.get('attachment') or '', ensure_ascii=False),
             'provenance': {'account': account, 'chat': chat, 'message_id': message['id'], 'revision': _digest(content), 'from_me': bool(message.get('from_me'))},
             'declared': {'edited': bool(message.get('edited')), 'deleted': bool(message.get('deleted')), 'coverage': page.get('coverage')},
+            'reply_to': message.get('reply_to') if isinstance(message.get('reply_to'), dict) else None,
         })
     result = ingest_batch(store, records, channel='whatsapp')
     coverage = page.get('coverage') or {'scope': 'unknown', 'phone_history_complete': False}

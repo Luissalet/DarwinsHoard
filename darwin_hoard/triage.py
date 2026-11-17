@@ -12,7 +12,7 @@ import json
 import time
 from typing import Any, Callable, Optional
 
-from . import coverage, tree
+from . import coverage, replies, tree
 from .store import Store
 
 ChatFn = Callable[..., dict[str, Any]]
@@ -21,7 +21,8 @@ SCHEMA = {"type": "object", "properties": {"app": {"type": ["string", "null"]}, 
 SYSTEM = ("Clasificas descubrimientos (repos, posts, artículos) para la familia de apps Faustus/Hoards de Luis. Para cada uno elige "
           "UNA app del catálogo donde aportaría algo concreto, o null si no encaja en ninguna o es ruido (un perfil de X sin "
           "contenido, algo ilegible). Usa solo ids del catálogo. 'reason': una frase en castellano de España con qué aportaría. "
-          "'useful': false si es ruido. Devuelve JSON {app, reason, useful}.")
+          "'useful': false si es ruido. Si hay un COMENTARIO DE LUIS, es el contexto principal: dice por qué le importa y para qué app "
+          "lo pensó; úsalo para elegir la app y apóyate en él en 'reason'. Devuelve JSON {app, reason, useful}.")
 
 
 def catalogue(store: Store) -> dict[str, str]:
@@ -36,7 +37,10 @@ def pending(store: Store, *, channel: str = "", limit: int = 50) -> list[dict[st
         where.append("s.id IN (SELECT cs.source_id FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE c.channel=? "
                      "UNION SELECT source_id FROM captures WHERE channel=?)")
         args += [channel, channel]
-    return store.q(f"SELECT s.* FROM sources s WHERE {' AND '.join(where)} ORDER BY s.last_seen DESC LIMIT ?", (*args, limit))
+    commented = ("EXISTS (SELECT 1 FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE cs.source_id=s.id "
+                 f"AND {replies.HAS_REPLY} AND {replies.FROM_ME})")
+    # what Luis commented on goes first: those are the discoveries he cares about most
+    return store.q(f"SELECT s.* FROM sources s WHERE {' AND '.join(where)} ORDER BY {commented} DESC, s.last_seen DESC LIMIT ?", (*args, limit))
 
 
 def _material(store: Store, src: dict[str, Any]) -> str:
@@ -44,7 +48,9 @@ def _material(store: Store, src: dict[str, Any]) -> str:
                    "ON cs.capture_id=c.id WHERE cs.source_id=? LIMIT 3", (src["id"],))
     texts = [t for c in caps for t in (c["text"], c["ocr"]) if t]
     body = "\n".join(texts)[:1500]
-    return f"Título: {src.get('title') or ''}\nURL: {src.get('url') or ''}\nRepo: {src.get('repo') or ''}\nTexto:\n{body}"
+    luis = replies.context_for(store, src["id"])
+    said = f"COMENTARIO DE LUIS (contexto principal):\n{luis}\n" if luis else ""
+    return f"{said}Título: {src.get('title') or ''}\nURL: {src.get('url') or ''}\nRepo: {src.get('repo') or ''}\nTexto:\n{body}"
 
 
 def run(store: Store, chat: ChatFn, *, channel: str = "", limit: int = 50,

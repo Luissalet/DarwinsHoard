@@ -9,7 +9,8 @@ Darwin's own data, each part with its reason so the number can be argued with:
 * GitHub stars: up to 15;
 * a permissive licence (MIT, Apache, BSD, ISC, MPL, Unlicense): 10;
 * it is recent (seen in the last 14 days: 15; 60 days: 8);
-* it is a concrete repository rather than a post or a page: 10.
+* it is a concrete repository rather than a post or a page: 10;
+* Luis commented on it (a reply quoting it in the chat): 20, because those are the discoveries he cared about.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ def gap_terms(store: Store) -> list[dict[str, Any]]:
 
 
 def score(source: dict[str, Any], aggregate: str, *, text: str = "", gaps: Optional[list[dict[str, Any]]] = None,
-          now: Optional[float] = None) -> dict[str, Any]:
+          now: Optional[float] = None, luis_comments: int = 0) -> dict[str, Any]:
     if aggregate not in OPEN:
         return {"score": 0, "reasons": [f"ya decidido ({aggregate})"]}
     now = now or time.time()
@@ -86,6 +87,9 @@ def score(source: dict[str, Any], aggregate: str, *, text: str = "", gaps: Optio
     if (source.get("key") or "").startswith("repo:"):
         total += 10
         reasons.append("es un repositorio concreto (+10)")
+    if luis_comments:
+        total += 20
+        reasons.append("Luis lo comentó en el chat (+20)")
     return {"score": int(min(100, round(total))), "reasons": reasons, "gap": best[1]["id"] if best else None}
 
 

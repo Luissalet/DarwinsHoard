@@ -18,7 +18,8 @@
 | Bulk ingestion from another app | `darwin_ingest` |
 | Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch; `via` says the proof: direct, other_repository, cherry_pick_trailer, patch_id, subject_date, agora_*; `imported` for apps folded in without history), `darwin_tree_refresh` |
 | Where an old repository name lives today | `darwin_repo_aliases` (built-in + Luis's aliases, folded apps' subfolders, names nothing resolves), `darwin_repo_alias_set` |
-| WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor) |
+| WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor; `from_start` reads every retained page again and completes what is stored) |
+| What Luis said about a discovery (a chat reply quoting it) | `darwin_comments` (each comment as «Luis: … (en respuesta a …)» with its discoveries; `source_id`, `query`, `from_luis`), the same lines in `darwin_source` (`comments`, `luis_comments`) and `darwin_find` (`commented` filter; `luis_comment` per result). Read it before proposing or triaging: it is the main context. |
 | A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
 | Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |

@@ -79,6 +79,11 @@ table.list { width: 100%; border-collapse: collapse; }
 .item .head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .item .body { color: var(--hoard-text-muted); font-size: 12.5px; margin-top: 4px; word-break: break-word; }
 .item .prov { color: var(--hoard-text-dim); font-size: 11.5px; margin-top: 4px; font-family: var(--hoard-font-mono); word-break: break-all; }
+.chip.luis { background: var(--hoard-accent-soft); color: var(--hoard-accent-strong); }
+.t-luis { color: var(--hoard-accent-strong); font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 62ch; }
+.luis-line { color: var(--hoard-text); font-size: 13px; }
+.quote { margin: 6px 0 0; padding: 4px 10px; border-left: 3px solid var(--hoard-border); color: var(--hoard-text-muted); font-size: 12px; word-break: break-word; }
+.item.comment.luis { border-color: var(--hoard-accent-strong); }
 .hist { font-size: 11.5px; color: var(--hoard-text-dim); margin-top: 4px; }
 code, .mono { font-family: var(--hoard-font-mono); font-size: 12px; }
 .inline-form { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }

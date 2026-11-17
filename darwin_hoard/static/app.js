@@ -210,7 +210,7 @@ function fillStaticFilters() {
   const saved = JSON.parse(store('darwin.filters') || '{}');
   for (const [id, v] of Object.entries(saved)) { const el = $(id); if (!el) continue; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
 }
-function saveFilters() { store('darwin.filters', JSON.stringify({ 'f-state': $('f-state').value, 'f-channel': $('f-channel').value, 'f-order': $('f-order').value, 'f-pinned': $('f-pinned').checked })); }
+function saveFilters() { store('darwin.filters', JSON.stringify({ 'f-state': $('f-state').value, 'f-channel': $('f-channel').value, 'f-order': $('f-order').value, 'f-pinned': $('f-pinned').checked, 'f-commented': $('f-commented').checked })); }
 for (const k of PROPOSAL_STATES) { const o = document.createElement('option'); o.value = k; o.textContent = STATE_LABEL[k]; $('p-state').appendChild(o); }
 for (const [k, l] of [['luis', 'Luis'], ['agent', 'Agente'], ['agora', 'Ágora'], ['radar', 'Radar'], ['tracker', 'Seguimiento'], ['guide', 'Guía']]) { const o = document.createElement('option'); o.value = k; o.textContent = l; $('p-origin').appendChild(o); }
 
@@ -233,7 +233,7 @@ $('f-saved').addEventListener('change', () => {
   $('f-delete').hidden = !f;
   if (!f) return;
   for (const [k, id] of Object.entries(FILTER_FIELDS)) $(id).value = f[k] ?? (k === 'order' ? 'recent' : '');
-  $('f-pinned').checked = !!f.pinned;
+  $('f-pinned').checked = !!f.pinned; $('f-commented').checked = !!f.commented;
   state.page = 0; saveFilters(); loadHistory();
 });
 $('f-save').addEventListener('click', async () => {
@@ -241,6 +241,7 @@ $('f-save').addEventListener('click', async () => {
   if (!name) return;
   const spec = Object.fromEntries(Object.entries(FILTER_FIELDS).map(([k, id]) => [k, $(id).value]).filter(([k, v]) => v && !(k === 'order' && v === 'recent')));
   if ($('f-pinned').checked) spec.pinned = true;
+  if ($('f-commented').checked) spec.commented = true;
   try { await api(`/api/filters/${encodeURIComponent(name)}`, { method: 'PUT', body: spec }); toast(`Filtro «${name}» guardado.`); await loadSavedFilters(); $('f-saved').value = name; $('f-delete').hidden = false; }
   catch (e) { fail(e); }
 });
@@ -251,7 +252,7 @@ $('f-delete').addEventListener('click', async () => {
 
 let qTimer = 0;
 $('f-q').addEventListener('input', () => { clearTimeout(qTimer); qTimer = setTimeout(() => { state.page = 0; loadHistory(); }, 250); });
-for (const id of ['f-state', 'f-target', 'f-channel', 'f-order', 'f-pinned']) $(id).addEventListener('change', () => { state.page = 0; saveFilters(); loadHistory(); });
+for (const id of ['f-state', 'f-target', 'f-channel', 'f-order', 'f-pinned', 'f-commented']) $(id).addEventListener('change', () => { state.page = 0; saveFilters(); loadHistory(); });
 $('pg-prev').addEventListener('click', () => { if (state.page > 0) { state.page--; loadHistory(); } });
 $('pg-next').addEventListener('click', () => { state.page++; loadHistory(); });
 
@@ -259,6 +260,7 @@ async function loadHistory() {
   const params = new URLSearchParams({ q: $('f-q').value, state: $('f-state').value, target: $('f-target').value, channel: $('f-channel').value,
     order: $('f-order').value, limit: state.pageSize, offset: state.page * state.pageSize });
   if ($('f-pinned').checked) params.set('pinned', 'true');
+  if ($('f-commented').checked) params.set('commented', 'true');
   try {
     const r = await api(`/api/discoveries?${params}`);
     const pages = Math.max(1, Math.ceil(r.total / state.pageSize));
@@ -269,8 +271,8 @@ async function loadHistory() {
     const tb = $('list').querySelector('tbody');
     tb.innerHTML = r.items.map((i) => `<tr data-id="${i.id}" class="${state.selected === i.id ? 'sel' : ''}">
       <td class="num">${i.radar_no ?? ''}</td>
-      <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div><div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
-      <td>${chip(i.state)}${proofChip(i.proof)}${i.fitness ? `<span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>` : ''}</td>
+      <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div>${i.luis_comment ? `<div class="t-luis" title="${esc(i.luis_comment)}">${esc(i.luis_comment)}</div>` : ''}<div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
+      <td>${i.luis_comments ? `<span class="chip luis" title="${esc(i.luis_comment)}">💬 Luis${i.luis_comments > 1 ? ' ×' + i.luis_comments : ''}</span>` : ''}${chip(i.state)}${proofChip(i.proof)}${i.fitness ? `<span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>` : ''}</td>
       <td>${i.targets.map(appChip).join('')}</td>
       <td class="num">${i.captures}</td><td class="meta">${when(i.last_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
     tb.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => openDetail(+tr.dataset.id)));
@@ -303,6 +305,7 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
       ${g.fitness && g.fitness.score ? `<p class="meta">Puntuación ${g.fitness.score}/100: ${esc(g.fitness.reasons.join(' · '))}</p>` : ''}
       <div class="coverage"><button class="btn small" id="cov-btn" type="button" title="Compara sus palabras con el árbol de capacidades">¿Ya lo cubre alguna app?</button><div id="cov-out"></div></div>
       ${meta.triage ? `<p class="meta">Triaje automático: ${meta.triage.app ? `propuesto para ${esc(appName(meta.triage.app))}` : (meta.triage.useful === false ? 'parece ruido' : 'ninguna app encaja')} — ${esc(meta.triage.reason || '')}${meta.triage.already_covered ? ` <span class="chip st-parcial" title="${esc(meta.triage.already_covered.join(', '))}">quizá ya cubierto</span>` : ''}</p>` : ''}
+      ${g.comments && g.comments.length ? `<h4>Comentarios en el chat (${g.comments.length})</h4>${g.comments.map(commentCard).join('')}` : ''}
       <h4>Propuestas (${g.proposals.length})</h4>
       ${g.proposals.map((p) => `<div class="item"><div class="head">${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}${chip(p.state)}
           <span class="meta">${esc(CHANNEL_LABEL[p.origin] || p.origin || '')}${p.agora_task ? ` · Ágora ${esc(p.agora_space)} #${p.agora_task}` : ''}</span></div>
@@ -323,7 +326,7 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
         ${d.declared?.what ? `<div class="body">${esc(d.declared.what)}</div>` : ''}</div>`).join('') || '<div class="empty">Nada entregado todavía.</div>'}
       <h4>Apariciones (${g.captures.length})</h4>
       ${g.captures.map((c) => `<div class="item"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
-        <div class="body">${esc((c.text || '').slice(0, 600))}</div>
+        <div class="body">${esc((c.text || '').slice(0, 600))}</div>${c.reply ? quoteBlock(c.reply) : ''}
         <div class="prov">${c.provenance?.file ? `${esc(c.provenance.file)}:${c.provenance.line}` : ''}${c.provenance?.task ? `Ágora ${esc(c.provenance.space)} #${c.provenance.task}` : ''}${c.provenance?.file_sha256 ? ` · sha256 ${esc(c.provenance.file_sha256.slice(0, 12))}…` : ''}</div></div>`).join('')}`;
     el.querySelectorAll('[data-discuss]').forEach((btn) => btn.addEventListener('click', () => discussProposal(+btn.dataset.discuss, true)));
     el.querySelectorAll('[data-thread]').forEach((btn) => btn.addEventListener('click', () => discussProposal(+btn.dataset.thread, false)));
@@ -380,6 +383,15 @@ function ancestry(d) {
   return `<div class="hist">Comprobación de commit: ${label}${a.agora_refs?.length && a.status === 'unknown' ? ` · tareas del Ágora ${a.agora_refs.map((n) => `#${n}`).join(', ')}` : ''}</div>`;
 }
 
+// ------------------------------------------------------------------ comments (quoted replies)
+function quoteBlock(r) {
+  return `<blockquote class="quote"><span class="meta">En respuesta a${r.quoted_from ? ' ' + esc(r.quoted_from === 'me' ? 'un mensaje de Luis' : r.quoted_from) : ''}:</span> ${esc((r.quoted_text || '(mensaje sin texto)').slice(0, 300))}</blockquote>`;
+}
+function commentCard(c) {
+  return `<div class="item comment${c.from_luis ? ' luis' : ''}"><div class="head"><span class="chip luis">💬 ${esc(c.who)}</span><span class="meta">${whenFull(c.at)}</span></div>
+    <div class="body luis-line">${esc(c.text || '(sin texto)')}</div>${quoteBlock(c)}</div>`;
+}
+
 // ------------------------------------------------------------------ inbox
 
 async function loadInbox() {
@@ -395,7 +407,7 @@ async function loadInbox() {
         : (img ? '<div class="prov">Pendiente de leer</div>' : '');
       return `<div class="card inbox-card"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
       ${img ? `<a href="/api/captures/${c.id}/media" target="_blank" rel="noopener"><img class="thumb" loading="lazy" src="/api/captures/${c.id}/media" alt="Captura"></a>` : ''}
-      ${c.text ? `<p>${esc(c.text)}</p>` : (img ? '' : '<p>(sin texto)</p>')}${read}
+      ${c.reply ? `<p class="luis-line">${esc(c.reply.who)}: ${esc(c.text || '(sin texto)')}</p>${quoteBlock(c.reply)}` : (c.text ? `<p>${esc(c.text)}</p>` : (img ? '' : '<p>(sin texto)</p>'))}${read}
       <div class="inline-form"><input data-cap="${c.id}" placeholder="URL u owner/repo de esta captura"><button class="btn small" data-link="${c.id}">Convertir en descubrimiento</button></div></div>`;
     }).join('') || '<div class="empty">Nada pendiente.</div>';
     $('inbox').querySelectorAll('[data-link]').forEach((b) => b.addEventListener('click', async () => {

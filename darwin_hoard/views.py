@@ -10,7 +10,7 @@ from typing import Any, Optional
 from . import query
 from .store import OPEN_GAP_SQL, PROPOSAL_STATES, Store
 
-FILTER_KEYS = ("query", "state", "target", "channel", "kind", "pinned", "order")
+FILTER_KEYS = ("query", "state", "target", "channel", "kind", "pinned", "commented", "order")
 FAMILY_SPACES = {"research", "ecosystem", "familia", "family", "hoards", "darwin-family"}
 
 

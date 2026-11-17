@@ -14,7 +14,7 @@ from . import __version__
 from .config import Config
 from .hoard_link.atomic import read_json, write_json_atomic
 from .hoard_link.tokens import read_or_create_token
-from . import reconcile, suit_seeds
+from . import reconcile, replies, suit_seeds
 from .legacy import LegacyImporter
 from .store import Store
 from .tree import TreeBuilder
@@ -340,8 +340,10 @@ class Services:
         q = query.lower().strip()
         return [c for c in chats if not q or q in str(c.get("name") or c.get("chat_name") or "").lower() or q in str(c.get("jid") or c.get("id") or "")]
 
-    def sync_whatsapp(self, *, chat: str = "", account: str = "", max_pages: int = 50) -> dict[str, Any]:
-        """Read the chosen chat page by page through Faustus's bridge (read only). One sync per account/chat at a time."""
+    def sync_whatsapp(self, *, chat: str = "", account: str = "", max_pages: int = 50, from_start: bool = False) -> dict[str, Any]:
+        """Read the chosen chat page by page through Faustus's bridge (read only). One sync per account/chat at a time.
+        ``from_start`` forgets the cursor and reads every retained page again: captures already stored are completed (the message
+        a reply quotes) instead of duplicated."""
         from darwin_ingest import sync_whatsapp_page
         chat = chat or self.settings.get("whatsapp_chat") or ""
         account = account or self.settings.get("whatsapp_account") or "luis"
@@ -353,7 +355,10 @@ class Services:
         try:
             def client(*, chat: str, cursor: str, limit: int) -> dict[str, Any]:
                 return self._faustus_get("/api/whatsapp/message-page", {"chat": chat, "cursor": cursor, "limit": limit})
-            totals = {"created": 0, "existing": 0, "sources": set(), "pages": 0}
+            if from_start:
+                from darwin_ingest.captures import _digest
+                self.store.set_meta("whatsapp-pass:" + _digest([account, chat]), {"cursor": ""})
+            totals = {"created": 0, "existing": 0, "sources": set(), "pages": 0, "replies": 0, "reply_links": 0}
             last: dict[str, Any] = {}
             bridge: dict[str, Any] = {}
             for _ in range(max(1, max_pages)):
@@ -368,6 +373,8 @@ class Services:
                 totals["created"] += last["created"]
                 totals["existing"] += last["existing"]
                 totals["sources"].update(last["sources"])
+                totals["replies"] += last.get("replies", 0)
+                totals["reply_links"] += last.get("reply_links", 0)
                 totals["pages"] += 1
                 if last["pass_complete"]:
                     break
@@ -376,7 +383,8 @@ class Services:
                 self.start_ocr()    # new screenshots: read them in the background
                 self.start_posts()  # new post links: read them through Links' sessions
             out = {"chat": chat, "pages": totals["pages"], "created": totals["created"], "existing": totals["existing"],
-                   "sources": len(totals["sources"]), "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
+                   "sources": len(totals["sources"]), "replies": totals["replies"], "reply_links": totals["reply_links"],
+                   "pass_complete": last.get("pass_complete"), "coverage": last.get("coverage")}
             if bridge:
                 out["bridge_started"] = bridge
             return out
@@ -546,6 +554,7 @@ class Services:
             result = social.read_posts(self.store, self.links_call, limit=limit, digest=digest,
                                        on_progress=lambda d, t: self.posts_job.update(done=d, total=t))
             self.posts_job = {"running": False, "finished": time.time(), **result}
+            replies.relink(self.store)
             return result
         except Exception as exc:  # noqa: BLE001
             self.posts_job = {"running": False, "finished": time.time(), "error": str(exc)}
@@ -706,6 +715,7 @@ class Services:
             result = ocr.read_inbox(self.store, self.media_dir, engine, limit=limit, on_progress=progress,
                                     repo_search=ocr.github_search_repos)
             self.ocr_job = {"running": False, "finished": time.time(), **result}
+            replies.relink(self.store)      # a quoted screenshot has its discovery now: its comments follow
             return result
         except Exception as exc:  # noqa: BLE001 - surfaced to the page, never kills the app
             self.ocr_job = {"running": False, "finished": time.time(), "error": str(exc)}
