@@ -1,9 +1,9 @@
 """Quoted replies in the chat: a comment answers a message, and the message is what the comment is about.
 
-Luis answers a reel with a sentence («esto me parece muy interesante para Blood Arrows»). The bridge gives every message
+An account holder replies to a reel. The bridge gives every message
 its ``reply_to`` (the quoted message's id, author and text); Darwin keeps it on the comment's capture
 (``declared.reply_to``, and ``provenance.reply_to_id``) and links the comment to the same discoveries as the quoted
-message, so the comment shows next to the discovery as «Luis: … (en respuesta a …)». If the quoted message has not
+message, so the comment shows next to the discovery as with its sender label and the quoted message. If the quoted message has not
 arrived yet, the link is made when it does: :func:`relink` is idempotent and runs after every sync and every read of
 screenshots or posts (a quoted screenshot gets its discovery only once it has been read)."""
 
@@ -102,31 +102,34 @@ def _shorten(text: str, n: int = LINE_CHARS) -> str:
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
 
-def describe(capture: dict[str, Any]) -> Optional[dict[str, Any]]:
+def describe(capture: dict[str, Any], store: Store | None = None) -> Optional[dict[str, Any]]:
     """A capture that answers a message, in the shape the page and the tools show it; ``None`` if it answers nothing."""
     declared = capture.get("declared") if isinstance(capture.get("declared"), dict) else json.loads(capture.get("declared") or "{}")
     provenance = capture.get("provenance") if isinstance(capture.get("provenance"), dict) else json.loads(capture.get("provenance") or "{}")
     reply = declared.get("reply_to")
     if not isinstance(reply, dict) or not reply.get("id"):
         return None
-    luis = bool(provenance.get("from_me"))
-    who = "Luis" if luis else "Otra persona del grupo"
+    from_me = bool(provenance.get("from_me"))
+    sender_name = provenance.get("from_name") or ""
+    if not sender_name and from_me and store and (not store.whatsapp_account or provenance.get("account") == store.whatsapp_account):
+        sender_name = store.owner_label
+    who = sender_name or ("Cuenta propia" if from_me else "Otra persona del grupo")
     quoted = _shorten(reply.get("text") or "") or (f"un mensaje de {reply['from_name']}" if reply.get("from_name") else "un mensaje")
     text = (capture.get("text") or "").strip()
-    return {"capture_id": capture["id"], "at": capture.get("at"), "from_luis": luis, "who": who, "text": text,
+    return {"capture_id": capture["id"], "at": capture.get("at"), "from_me": from_me, "sender_name": sender_name, "who": who, "text": text,
             "quoted_id": reply["id"], "quoted_text": reply.get("text") or "", "quoted_from": reply.get("from_name") or "",
             "quoted_capture_id": reply.get("capture_id"),
             "line": f"{who}: {_shorten(text, 300)} (en respuesta a {quoted})" if text else f"{who}: (sin texto) (en respuesta a {quoted})"}
 
 
-def comments_of(store: Store, source_id: int, *, only_luis: bool = False) -> list[dict[str, Any]]:
+def comments_of(store: Store, source_id: int, *, only_mine: bool = False) -> list[dict[str, Any]]:
     rows = store.q("SELECT c.* FROM captures c WHERE c.id IN (SELECT capture_id FROM capture_sources WHERE source_id=?) "
-                   f"AND {HAS_REPLY}{' AND ' + FROM_ME if only_luis else ''} ORDER BY c.at", (source_id,))
-    return [d for d in (describe(r) for r in rows) if d]
+                   f"AND {HAS_REPLY}{' AND ' + FROM_ME if only_mine else ''} ORDER BY c.at", (source_id,))
+    return [d for d in (describe(r, store) for r in rows) if d]
 
 
 def counts_by_source(store: Store, ids: list[int]) -> dict[int, dict[str, Any]]:
-    """For a page of discoveries: how many comments of Luis each has and the latest one as a line."""
+    """For a page of discoveries: how many comments from the account holder each has and the latest one as a line."""
     out: dict[int, dict[str, Any]] = {}
     for chunk in range(0, len(ids), 500):
         part = ids[chunk:chunk + 500]
@@ -135,7 +138,7 @@ def counts_by_source(store: Store, ids: list[int]) -> dict[int, dict[str, Any]]:
         rows = store.q("SELECT cs.source_id AS sid, c.* FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id "
                        f"WHERE cs.source_id IN ({','.join('?' * len(part))}) AND {HAS_REPLY} AND {FROM_ME} ORDER BY c.at", part)
         for r in rows:
-            d = describe(r)
+            d = describe(r, store)
             if d:
                 slot = out.setdefault(r["sid"], {"count": 0, "line": ""})
                 slot["count"] += 1
@@ -144,14 +147,14 @@ def counts_by_source(store: Store, ids: list[int]) -> dict[int, dict[str, Any]]:
 
 
 def context_for(store: Store, source_id: int, limit: int = 3) -> str:
-    """The comments of Luis on a discovery as plain lines: the main context for triage and proposals."""
-    return "\n".join(c["line"] for c in comments_of(store, source_id, only_luis=True)[-limit:])
+    """The comments from the account holder on a discovery as plain lines: the main context for triage and proposals."""
+    return "\n".join(c["line"] for c in comments_of(store, source_id, only_mine=True)[-limit:])
 
 
-def comments(store: Store, *, from_luis: bool = True, query: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
+def comments(store: Store, *, from_me: bool = True, query: str = "", limit: int = 50, offset: int = 0) -> dict[str, Any]:
     """Every comment that answers a message, newest first, with the discoveries it ended up linked to."""
     where, args = [HAS_REPLY], []
-    if from_luis:
+    if from_me:
         where.append(FROM_ME)
     if query.strip():
         where.append("(LOWER(c.text) LIKE ? OR LOWER(json_extract(c.declared,'$.reply_to.text')) LIKE ?)")
@@ -160,7 +163,7 @@ def comments(store: Store, *, from_luis: bool = True, query: str = "", limit: in
     rows = store.q(f"SELECT c.* FROM captures c WHERE {' AND '.join(where)} ORDER BY c.at DESC LIMIT ? OFFSET ?", [*args, limit, offset])
     items = []
     for r in rows:
-        d = describe(r)
+        d = describe(r, store)
         if not d:
             continue
         d["sources"] = store.q("SELECT s.id, s.key, s.title, s.url FROM sources s JOIN capture_sources cs ON cs.source_id=s.id WHERE cs.capture_id=? "

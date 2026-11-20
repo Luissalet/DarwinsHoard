@@ -33,6 +33,84 @@ def test_health_and_add_then_existing(client):
     assert lst["total"] == 1
 
 
+
+def test_owner_attribution_preserves_old_decisions_and_distinguishes_agent(client):
+    svc = client.app.state.services
+    store = svc.store
+    source_id = store.upsert_source(url="https://example.test/legacy")
+    proposal_id = store.upsert_proposal(key="legacy", source_id=source_id, target="links", origin="agent")
+    store.set_state("proposals", proposal_id, "state", "aceptada", by="previous-profile", note="Stored decision")
+    store.add_capture(capture_key="legacy-capture", channel="manual", text="Previous capture", author="previous-profile",
+                      provenance={"via": "darwin_add"}, source_id=source_id)
+    client.put("/api/settings", json={"owner_name": "Review profile", "whatsapp_account": "separate-chat-account"}).raise_for_status()
+
+    args = {"entity": "proposals", "id": proposal_id, "field": "state", "value": "descartada", "by": "Review profile"}
+    headers = {"Authorization": f"Bearer {svc.token}"}
+    def set_state(route, arguments, **kwargs):
+        return client.post(route, json={"name": "darwin_set_state", "arguments": arguments}, **kwargs).raise_for_status().json()
+
+    assert set_state("/api/agent/call", args, headers=headers)["changed"] is False
+    updated = set_state("/api/ui/call", args)
+    assert updated["changed"]
+    assert [row["by"] for row in updated["history"]] == ["previous-profile", "Review profile"]
+    assert updated["history"][0]["note"] == "Stored decision"
+    [owned] = client.get("/api/proposals", params={"origin": "owner"}).json()["items"]
+    assert owned["origin_actor"] == "Review profile"
+
+    added = client.post("/api/agent/call", headers=headers, json={
+        "name": "darwin_add", "arguments": {"text": "https://example.test/agent", "target": "links",
+                                            "channel": "manual", "author": "Review profile"}
+    }).raise_for_status().json()
+    capture = store.one("SELECT author, provenance FROM captures WHERE id=?", (added["capture_id"],))
+    assert capture["author"] == "agent"
+    assert capture["provenance"]["actor_role"] == "agent"
+
+
+
+def test_legacy_reply_filter_and_origin_work_without_saved_settings(tmp_path):
+    from darwin_hoard.store import Store
+    from darwin_ingest import ingest_batch
+
+    former_owner = "previous_profile"
+    alternate_filter = "from_unconfigured_profile"
+    cfg = Config(data_dir=tmp_path / "data", port=5233, data_dir_configured=True, hub_url="http://127.0.0.1:9")
+    old = Store(cfg.db_path)
+    url = "https://example.test/old"
+    source = old.upsert_source(url=url)
+    proposal = old.upsert_proposal(key="old:decision", source_id=source, target="links", origin=former_owner)
+    old.set_state("proposals", proposal, "state", "aceptada", by=former_owner, note="Historical choice")
+    old.upsert_proposal(key="old:links", source_id=source, target="tracker", origin="links")
+    quoted = {"id": "quoted", "text": url}
+    ingest_batch(old, [
+        {"capture_key": "own", "text": "Own saved reply", "provenance": {"from_me": True}, "reply_to": quoted},
+        {"capture_key": "other", "text": "Other saved reply", "provenance": {"from_me": False}, "reply_to": quoted},
+    ], channel="whatsapp")
+    old.close()
+
+    with TestClient(create_app(cfg, background=False), base_url="http://127.0.0.1:5233", client=("127.0.0.1", 50000)) as client:
+        svc = client.app.state.services
+        headers = {"Authorization": f"Bearer {svc.token}"}
+        reply_filter = client.post("/api/agent/call", headers=headers, json={
+            "name": "darwin_comments", "arguments": {alternate_filter: False},
+        }).raise_for_status().json()
+        assert reply_filter["total"] == 2
+        assert {item[alternate_filter] for item in reply_filter["items"]} == {False, True}
+        old_query = client.get("/api/comments", params={f"from_{former_owner}": "false"}).raise_for_status().json()
+        assert old_query["total"] == 2
+        both = client.get("/api/comments", params={f"from_{former_owner}": "false", "from_me": "true"}).raise_for_status().json()
+        assert both["total"] == 1
+
+        for origin in ("owner", former_owner):
+            [owner_row] = client.get("/api/proposals", params={"origin": origin}).json()["items"]
+            assert owner_row["id"] == proposal and owner_row["origin"] == former_owner
+            assert owner_row["origin_role"] == "owner" and owner_row["state"] == "aceptada"
+        replay = client.post("/api/agent/call", headers=headers, json={
+            "name": "darwin_set_state", "arguments": {"entity": "proposals", "id": proposal, "field": "state", "value": "descartada"},
+        }).raise_for_status().json()
+        assert replay["changed"] is False
+        assert replay["history"][0]["note"] == "Historical choice"
+
+
 def test_tree_from_manifests_when_hub_down(client):
     rep = client.post("/api/tree/refresh").json()
     assert rep["hub"]["ok"] is False and rep["manifests"]["manifests"] == 1

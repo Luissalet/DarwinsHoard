@@ -2,6 +2,8 @@
 
 **Purpose:** before proposing, researching or building something, ask Darwin whether it was already seen, proposed, delivered or covered by another app.
 
+The attribution fields in the WhatsApp panel configure the owner’s display name and account separately. The browser records owner actions; agent calls record an agent action. Chat filtering uses the bridge’s `from_me` flag. Stored account values, origins and previous authors remain in history. Existing unqualified owner origins classify as owner, and a legacy `from_<account>` reply filter is accepted alongside `from_me`. An additional historical identifier can be configured in `legacy_owner_ids`.
+
 ## When to call what
 
 | Need | Tool |
@@ -17,16 +19,16 @@
 | Notes with no link yet | `darwin_inbox` |
 | Bulk ingestion from another app | `darwin_ingest` |
 | Refresh evidence | `darwin_verify_deliveries` (git ancestry, no fetch; `via` says the proof: direct, other_repository, cherry_pick_trailer, patch_id, subject_date, agora_*; `imported` for apps folded in without history), `darwin_tree_refresh` |
-| Where an old repository name lives today | `darwin_repo_aliases` (built-in + Luis's aliases, folded apps' subfolders, names nothing resolves), `darwin_repo_alias_set` |
+| Where an old repository name lives today | `darwin_repo_aliases` (built-in + configured aliases, folded apps' subfolders, names nothing resolves), `darwin_repo_alias_set` |
 | WhatsApp «Gittrend» | `darwin_whatsapp_chats`, `darwin_sync_whatsapp` (read only, incremental by cursor; `from_start` reads every retained page again and completes what is stored) |
-| What Luis said about a discovery (a chat reply quoting it) | `darwin_comments` (each comment as «Luis: … (en respuesta a …)» with its discoveries; `source_id`, `query`, `from_luis`), the same lines in `darwin_source` (`comments`, `luis_comments`) and `darwin_find` (`commented` filter; `luis_comment` per result). Read it before proposing or triaging: it is the main context. |
+| What the account holder said about a discovery (a chat reply quoting it) | `darwin_comments` (sender, quote and linked discoveries; `source_id`, `query`, `from_me`), the same lines in `darwin_source` (`comments`, `own_comments`) and `darwin_find` (`commented` filter; `own_comment` per result). Read it before proposing or triaging: it is the main context. |
 | A question in plain words | `darwin_ask` (local retrieval + the family's local model; cites discoveries `[#id]`) |
 | Suggest apps for unproposed discoveries | `darwin_triage` (pending proposals with origin agent) |
 | Debate a proposal | `darwin_discuss` (one Ágora thread per proposal, space `darwin`) |
 | What is most worth a look | `darwin_find` with `order: fitness` (score and reasons per discovery) |
 | Links saved for Darwin | `darwin_import_links` (tag `darwin` in Links, or any GitHub repository) |
 | Darwin in the Brain | `darwin_brain_export` (Notes/Darwin, linked notes; also every few hours) |
-| Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (Luis signs in himself in Links' window), `darwin_read_posts` (a reel or video post is also digested by Links; the card becomes the summary) |
+| Read the posts behind discoveries | `darwin_accounts`, `darwin_account_login` (the account holder signs in in Links' window), `darwin_read_posts` (a reel or video post is also digested by Links; the card becomes the summary) |
 | Screenshots with no link | `darwin_read_screenshots` (family OCR; every GitHub repository checked, a cut or misread name completed from the owner's repositories when exactly one fits, otherwise not taken; Kafka stopped → the Hub starts it, failing that the vision model reads the picture; each image read once) |
 | A discovery that was a misreading of another | `darwin_source_correct` (captures, proposals and deliveries move to the right one; the wrong key, title and summary are kept) |
 | How long the chat has gone unsynced | `darwin_overview` (`whatsapp.days_without_sync`); Darwin catches up on start |
@@ -55,7 +57,7 @@
 
 ## What it cannot do (yet)
 
-- Run a schedule by itself: the gap-driven radar and the saved questions are tools (`darwin_radar_plan`, `darwin_radar_run`, `darwin_watches_check`) that a scheduled task calls; Darwin checks the saved questions on its own every four hours, but the daily radar task's instructions ([docs/RADAR.md](docs/RADAR.md)) are applied to that task by Luis.
+- Run a schedule by itself: the gap-driven radar and the saved questions are tools (`darwin_radar_plan`, `darwin_radar_run`, `darwin_watches_check`) that a scheduled task calls; Darwin checks the saved questions on its own every four hours, but the daily radar task's instructions ([docs/RADAR.md](docs/RADAR.md)) are applied to that task by the owner.
 - Read WhatsApp history the bridge never received.
 
 ## Icono de familia (2026-11-02)

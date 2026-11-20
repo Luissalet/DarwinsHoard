@@ -6,7 +6,7 @@ from darwin_hoard.store import Store
 def _seed(tmp_path):
     store = Store(tmp_path / "d.db")
     sid = store.upsert_source(repo="leonxlnx/earshot", title="earshot: meeting transcription")
-    store.upsert_proposal(key="p1", source_id=sid, target="talos", state="aceptada", origin="luis")
+    store.upsert_proposal(key="p1", source_id=sid, target="talos", state="aceptada", origin="owner")
     other = store.upsert_source(repo="foo/unrelated", title="a game engine")
     return store, sid, other
 

@@ -166,15 +166,15 @@ def find(store: Store, *, query: str = "", state: str = "", target: str = "", ch
         items.append(_summary(r, p, d, agg))
     said = replies.counts_by_source(store, [i["id"] for i in items])
     for it in items:
-        it["luis_comments"] = said.get(it["id"], {}).get("count", 0)
-        it["luis_comment"] = said.get(it["id"], {}).get("line", "")
+        it["own_comments"] = said.get(it["id"], {}).get("count", 0)
+        it["own_comment"] = said.get(it["id"], {}).get("line", "")
     if order == "fitness" or with_fitness:
         from . import fitness as fit
         gaps = fit.gap_terms(store)
         texts = fit.texts_by_source(store, [i["id"] for i in items])
         by_id = {r["id"]: r for r in rows}
         for it in items:
-            f = fit.score(by_id[it["id"]], it["state"], text=texts.get(it["id"], ""), gaps=gaps, luis_comments=it.get("luis_comments", 0))
+            f = fit.score(by_id[it["id"]], it["state"], text=texts.get(it["id"], ""), gaps=gaps, own_comments=it.get("own_comments", 0))
             it["fitness"], it["fitness_reasons"] = f["score"], f["reasons"]
         if order == "fitness":
             items.sort(key=lambda i: -i["fitness"])
@@ -231,12 +231,12 @@ def genealogy(store: Store, *, source_id: Optional[int] = None, key: str = "", r
     agg = _aggregate(props, dels)
     from . import fitness as fit
     comments = replies.comments_of(store, sid)
-    luis = [c for c in comments if c["from_luis"]]
-    fitness = fit.score(src, agg, text=fit.texts_by_source(store, [sid]).get(sid, ""), gaps=fit.gap_terms(store), luis_comments=len(luis))
+    own = [c for c in comments if c["from_me"]]
+    fitness = fit.score(src, agg, text=fit.texts_by_source(store, [sid]).get(sid, ""), gaps=fit.gap_terms(store), own_comments=len(own))
     for cap in caps:
-        cap["reply"] = replies.describe(cap)
+        cap["reply"] = replies.describe(cap, store)
     return {"proof": proof_of(dels), "source": src, "aliases": aliases, "state": agg, "captures": caps, "ideas": ideas, "proposals": props,
-            "deliveries": dels, "fitness": fitness, "comments": comments, "luis_comments": len(luis)}
+            "deliveries": dels, "fitness": fitness, "comments": comments, "own_comments": len(own)}
 
 
 def overview(store: Store) -> dict[str, Any]:
@@ -299,5 +299,5 @@ def inbox(store: Store, *, channel: str = "", limit: int = 100, offset: int = 0)
     total = store.one(f"SELECT COUNT(*) AS n {sql}", args)["n"]
     rows = store.q(f"SELECT c.* {sql} ORDER BY c.at DESC LIMIT ? OFFSET ?", [*args, limit, offset])
     for row in rows:
-        row["reply"] = replies.describe(row)      # a comment whose quoted message Darwin does not hold still says what it answers
+        row["reply"] = replies.describe(row, store)      # a comment whose quoted message Darwin does not hold still says what it answers
     return {"total": total, "items": rows}

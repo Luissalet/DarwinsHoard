@@ -1,7 +1,7 @@
-"""Social posts behind discoveries: read them with the session Luis signed in to, and link what they point at.
+"""Social posts behind discoveries: read them with the session the account holder signed in to, and link what they point at.
 
 A discovery that is a post (``x.com/<user>/status/<id>``, an Instagram post or reel, a Threads post…) says little by its URL:
-the repository or article is inside the text. Links reads the post with the browser profile where Luis signed in himself
+the repository or article is inside the text. Links reads the post with the browser profile where the account holder signed in
 (``read_post``; ``site_login`` opens the sign-in window, and nobody but him types the password). The text becomes a capture
 of the post (channel ``post``), the post's own source gets a readable title and summary, and the repositories and links in
 it become sources linked to that capture: GitHub repositories and any non-social link as they are, bare ``owner/name``

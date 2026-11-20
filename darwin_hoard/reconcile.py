@@ -137,7 +137,7 @@ def _semantic_valid(store: Store, backing: dict[str, dict[str, Any]], flag: dict
 
 SEM_SCHEMA = {"type": "object", "properties": {"match": {"type": "integer"}, "confidence": {"type": "string"}, "reason": {"type": "string"}},
               "required": ["match", "confidence"]}
-SEM_SYSTEM = ("Eres Darwin, el archivo de la familia Faustus/Hoards. Una carencia es algo que Luis quiere y que, según su apunte, "
+SEM_SYSTEM = ("Eres Darwin, el archivo de la familia Faustus/Hoards. Una carencia es algo que la persona responsable quiere y que, según su apunte, "
               "ninguna app hace. Se te da la carencia y varias capacidades que SÍ existen, con prueba. Decide si alguna de ellas "
               "hace ya lo que pide la carencia, entendiendo el significado y no solo las palabras. Devuelve JSON {match, "
               "confidence, reason}: match es el número de la capacidad que ya lo hace (0 si ninguna), confidence es "

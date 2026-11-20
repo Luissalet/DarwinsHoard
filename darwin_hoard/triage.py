@@ -3,7 +3,7 @@
 For each source without proposals, the material is what Darwin holds about it (title, URL, the chat text and the OCR of
 its screenshot) plus the apps whose capabilities share its words (the tree). The family's local model picks one app id
 from the real catalogue, or none, and says why in one sentence. A pick becomes a *pending* proposal with origin
-``agent`` (Luis's own decisions outrank it and are never overwritten); every verdict, pick or not, is kept on the source
+``agent`` (The owner's decisions outrank it and are never overwritten); every verdict, pick or not, is kept on the source
 (``meta.triage``) so a discovery is triaged once."""
 
 from __future__ import annotations
@@ -18,10 +18,10 @@ from .store import Store
 ChatFn = Callable[..., dict[str, Any]]
 SCHEMA = {"type": "object", "properties": {"app": {"type": ["string", "null"]}, "reason": {"type": "string"},
                                             "useful": {"type": "boolean"}}, "required": ["app", "reason", "useful"]}
-SYSTEM = ("Clasificas descubrimientos (repos, posts, artículos) para la familia de apps Faustus/Hoards de Luis. Para cada uno elige "
+SYSTEM = ("Clasificas descubrimientos (repos, posts, artículos) para la familia de apps Faustus/Hoards. Para cada uno elige "
           "UNA app del catálogo donde aportaría algo concreto, o null si no encaja en ninguna o es ruido (un perfil de X sin "
           "contenido, algo ilegible). Usa solo ids del catálogo. 'reason': una frase en castellano de España con qué aportaría. "
-          "'useful': false si es ruido. Si hay un COMENTARIO DE LUIS, es el contexto principal: dice por qué le importa y para qué app "
+          "'useful': false si es ruido. Si hay un COMENTARIO PROPIO, es el contexto principal: dice por qué le importa y para qué app "
           "lo pensó; úsalo para elegir la app y apóyate en él en 'reason'. Devuelve JSON {app, reason, useful}.")
 
 
@@ -39,7 +39,7 @@ def pending(store: Store, *, channel: str = "", limit: int = 50) -> list[dict[st
         args += [channel, channel]
     commented = ("EXISTS (SELECT 1 FROM capture_sources cs JOIN captures c ON c.id=cs.capture_id WHERE cs.source_id=s.id "
                  f"AND {replies.HAS_REPLY} AND {replies.FROM_ME})")
-    # what Luis commented on goes first: those are the discoveries he cares about most
+    # Prioritize discoveries with comments from the account holder.
     return store.q(f"SELECT s.* FROM sources s WHERE {' AND '.join(where)} ORDER BY {commented} DESC, s.last_seen DESC LIMIT ?", (*args, limit))
 
 
@@ -48,8 +48,8 @@ def _material(store: Store, src: dict[str, Any]) -> str:
                    "ON cs.capture_id=c.id WHERE cs.source_id=? LIMIT 3", (src["id"],))
     texts = [t for c in caps for t in (c["text"], c["ocr"]) if t]
     body = "\n".join(texts)[:1500]
-    luis = replies.context_for(store, src["id"])
-    said = f"COMENTARIO DE LUIS (contexto principal):\n{luis}\n" if luis else ""
+    owner_notes = replies.context_for(store, src["id"])
+    said = f"COMENTARIO PROPIO (contexto principal):\n{owner_notes}\n" if owner_notes else ""
     return f"{said}Título: {src.get('title') or ''}\nURL: {src.get('url') or ''}\nRepo: {src.get('repo') or ''}\nTexto:\n{body}"
 
 

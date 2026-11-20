@@ -159,7 +159,7 @@ def test_repo_map_aliases_settings_spaces_and_unknown(tmp_path):
     _repo(hub_dir), _repo(ws)
     rmap = RepoMap(hub_repos={'Hoard Hub': str(hub_dir)}, spaces={'blood-arrows': str(ws), 'ecosystem': str(tmp_path)},
                    custom={'Old Thing': 'Hoard Hub', 'HoardLink': {'path': str(ws)}})
-    assert rmap.resolve('HoardLink')['path'] == str(ws)              # Luis's entry wins over the built-in one
+    assert rmap.resolve('HoardLink')['path'] == str(ws)              # Owner entry wins over the built-in one
     assert rmap.resolve('old thing')['path'] == str(hub_dir)         # case and punctuation do not matter
     assert rmap.resolve('BloodArrows')['path'] == str(ws)            # alias to an Ágora space's workspace
     assert rmap.resolve('LocalAI') == {'search': True, 'name': 'LocalAI', 'via': 'builtin'}
@@ -208,7 +208,7 @@ def test_resolution_names_repositories_and_closed_without_integration(tmp_path):
     tasks = {
         262: {'task': {'repo': 'LocalAI', 'commits': []}, 'messages': [{'kind': 'resolution', 'body':
               f'Integrado: HoardLink main {hub_commit[:7]}, Tantalus main 57da1e2 y Faustus master dae07fc7 (106 pruebas).'}]},
-        283: {'task': {'repo': 'Hoard Hub', 'commits': []}, 'messages': [{'kind': 'resolution', 'body': 'Cierre sin integrar (prioridad de Luis).'}]},
+        283: {'task': {'repo': 'Hoard Hub', 'commits': []}, 'messages': [{'kind': 'resolution', 'body': 'Cierre sin integrar (prioridad de la persona responsable).'}]},
     }
     store = Store(tmp_path / 'd.db')
     tant = _deliver(store, 't', 'LocalAI', '57da1e2', agora_task=262)

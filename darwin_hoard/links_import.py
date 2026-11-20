@@ -1,6 +1,6 @@
 """Links saved in Links' Hoard that are meant for Darwin (``darwin_import_links``).
 
-Links keeps everything Luis saves to read later, mostly videos he downloads; only two kinds are discoveries: a link he
+Links keeps everything the owner saves to read later, mostly videos he downloads; only two kinds are discoveries: a link the owner
 tags ``darwin`` and any GitHub repository. Each becomes a capture (channel ``links``, keyed by the Links id, so importing
 again adds nothing) of the source its URL names; the saved title and excerpt fill a source that has none yet. Only the
 URL is read for identity: words of a title never become a guessed ``owner/name``."""

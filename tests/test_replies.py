@@ -24,7 +24,7 @@ def _client(*messages):
 
 
 def _sync(store, *messages):
-    return sync_whatsapp_page(store, _client(*messages), account="luis", chat=CHAT)
+    return sync_whatsapp_page(store, _client(*messages), account="test-account", chat=CHAT)
 
 
 QUOTE = {"id": "LINK1", "from_name": "me", "from_me": True, "text": REEL}
@@ -39,10 +39,10 @@ def test_a_reply_is_kept_and_linked_to_the_discovery_of_the_message_it_quotes(tm
     assert comment["provenance"]["reply_to_id"] == "LINK1" and comment["declared"]["reply_to"]["text"] == REEL
     assert comment["declared"]["reply_to"]["capture_id"]
     assert {r["source_id"] for r in store.q("SELECT source_id FROM capture_sources WHERE capture_id=?", (comment["id"],))} == {sid}
-    got = replies.comments_of(store, sid, only_luis=True)
-    assert [c["line"] for c in got] == [f"Luis: Esto me parece muy interesante para Blood Arrows (en respuesta a {REEL})"]
+    got = replies.comments_of(store, sid, only_mine=True)
+    assert [c["line"] for c in got] == [f"Cuenta propia: Esto me parece muy interesante para Blood Arrows (en respuesta a {REEL})"]
     g = query.genealogy(store, source_id=sid)
-    assert g["luis_comments"] == 1 and g["comments"][0]["quoted_id"] == "LINK1"
+    assert g["own_comments"] == 1 and g["comments"][0]["quoted_id"] == "LINK1"
     assert any(c["reply"] for c in g["captures"])
     assert query.inbox(store)["total"] == 0                       # the comment is no longer an orphan
 
@@ -79,10 +79,10 @@ def test_comments_query_filters_and_other_people_are_told_apart(tmp_path):
     _sync(store, _msg("LINK1", REEL, 100), _msg("C1", "Para Blood Arrows", 110, reply_to=QUOTE),
           _msg("C3", "Yo lo vi ayer", 120, reply_to=QUOTE, from_me=False))
     assert replies.comments(store)["total"] == 1
-    both = replies.comments(store, from_luis=False)
-    assert both["total"] == 2 and {i["who"] for i in both["items"]} == {"Luis", "Otra persona del grupo"}
+    both = replies.comments(store, from_me=False)
+    assert both["total"] == 2 and {i["who"] for i in both["items"]} == {"Cuenta propia", "Otra persona del grupo"}
     assert replies.comments(store, query="blood")["items"][0]["sources"][0]["key"].startswith("url:")
-    assert [i["luis_comments"] for i in query.find(store, commented=True)["items"]] == [1]
+    assert [i["own_comments"] for i in query.find(store, commented=True)["items"]] == [1]
     assert query.find(store, commented=False)["total"] == 0
 
 
@@ -90,8 +90,8 @@ def test_comment_leads_the_triage_material_and_the_score(tmp_path):
     store = Store(tmp_path / "d.db")
     _sync(store, _msg("LINK1", REEL, 100), _msg("C1", "Para Blood Arrows", 110, reply_to=QUOTE))
     src = store.one("SELECT * FROM sources WHERE key LIKE 'url:%AbC123xyz%'")
-    assert triage._material(store, src).startswith("COMENTARIO DE LUIS (contexto principal):\nLuis: Para Blood Arrows")
+    assert triage._material(store, src).startswith("COMENTARIO PROPIO (contexto principal):\nCuenta propia: Para Blood Arrows")
     assert triage.pending(store)[0]["id"] == src["id"]
     item = query.find(store, with_fitness=True)["items"][0]
-    assert "Luis lo comentó en el chat (+20)" in item["fitness_reasons"]
+    assert "Comentario propio en el chat (+20)" in item["fitness_reasons"]
     assert json.dumps(replies.normalize({"id": "x", "text": "t" * 5000})["text"]).count("t") == replies.QUOTE_CHARS

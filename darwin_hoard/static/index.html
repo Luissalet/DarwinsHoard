@@ -47,6 +47,11 @@
       <div class="card" id="wa-card">
         <div class="card-head"><h3>Gittrend (WhatsApp)</h3>
           <div class="actions"><select id="wa-chat" aria-label="Chat"><option value="">Elige el chat…</option></select><button class="btn" id="wa-find">Buscar chats</button><button class="btn primary" id="wa-sync">Sincronizar</button></div></div>
+        <form class="inline-form" id="attribution-form">
+          <label><span id="owner-name-label">Nombre para la autoría</span> <input id="owner-name" type="text" maxlength="80"></label>
+          <label><span id="wa-account-label">Cuenta de WhatsApp</span> <input id="wa-account" type="text" maxlength="80"></label>
+          <button class="btn" id="attribution-save" type="submit">Guardar</button>
+        </form>
         <p class="hint" id="wa-gap" role="status" hidden></p>
         <p class="hint" id="wa-status">Lee el chat a través del puente de WhatsApp de Faustus, sin enviar nada ni marcar como leído. Lo ya guardado no se repite.</p>
       </div>
@@ -91,7 +96,7 @@
           <option value="captures">Más apariciones</option><option value="title">Nombre</option><option value="oldest">Más antiguos</option>
         </select>
         <label class="check"><input type="checkbox" id="f-pinned"> Solo los que marqué 📌</label>
-        <label class="check"><input type="checkbox" id="f-commented"> Solo los que Luis comentó 💬</label>
+        <label class="check"><input type="checkbox" id="f-commented"> <span id="f-commented-label">Solo los que comenté 💬</span></label>
         <select id="f-saved" aria-label="Filtros guardados"><option value="">Filtros guardados…</option></select>
         <button class="btn small" id="f-save" type="button" title="Guarda la búsqueda, el estado, la app, el origen y el orden con un nombre">Guardar filtro</button>
         <button class="btn small ghost" id="f-delete" type="button" hidden>Borrar filtro</button>

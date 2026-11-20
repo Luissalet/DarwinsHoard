@@ -3,7 +3,7 @@
 Repositories were renamed, folded into other apps (as a subfolder, usually without their history) and moved from
 D:\\LocalAI and the Desktop to E:\\Development\\IA\\Hoards\\Faustusables and …\\Faustusnt on 29/30-10-2026. A delivery keeps
 the name it was declared with; this map says which local repository (and which subfolder) holds that code now, so the
-commit check looks in the right place. Luis's own entries (setting ``repo_aliases``) win over the built-in ones."""
+commit check looks in the right place. Configured entries (setting ``repo_aliases``) win over the built-in ones."""
 from __future__ import annotations
 
 import json
@@ -54,7 +54,7 @@ def norm(name: Any) -> str:
 
 
 def _clean(value: Any) -> dict[str, Any] | None:
-    """An alias as Luis may type it: a repository name, a folder path, or {repo|path|space, subdir, search}."""
+    """An alias as entered by the user: a repository name, a folder path, or {repo|path|space, subdir, search}."""
     if isinstance(value, str):
         value = value.strip()
         if not value:
@@ -75,7 +75,7 @@ def merged_aliases(custom: Mapping | None) -> dict[str, dict[str, Any]]:
         alias = _clean(value)
         if alias is None:
             continue
-        out.pop(by_key.get(norm(name), ""), None)  # Luis's entry replaces the built-in one for the same name
+        out.pop(by_key.get(norm(name), ""), None)  # A configured entry replaces the built-in one for the same name
         out[str(name)] = dict(alias, origin="settings")
     return out
 

@@ -1,4 +1,4 @@
-"""darwin_discuss: one Ágora thread per proposal, kept on it; notes are posted as darwin, marked as Luis's."""
+"""darwin_discuss: one Ágora thread per proposal, kept on it; notes are posted as darwin, attributed to the caller."""
 from darwin_hoard import debate
 from darwin_hoard.store import Store
 
@@ -24,7 +24,7 @@ def test_one_thread_per_proposal_and_notes_are_attributed(tmp_path):
     debate.discuss(store, pid, "http://hub", {}, fetch, note="Me interesa")
     posts = [c for c in calls if c[1] == "post"]
     assert len([c for c in calls if c[1] == "thread_open"]) == 1
-    assert posts and posts[0][2]["thread_id"] == 77 and "Nota de Luis" in posts[0][2]["body"]
+    assert posts and posts[0][2]["thread_id"] == 77 and "Nota de agent" in posts[0][2]["body"]
 
 
 def test_refused_thread_raises(tmp_path):

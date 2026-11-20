@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from contextvars import ContextVar
 from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -17,8 +18,14 @@ from .hoard_link.agentkit import uncapped  # noqa: F401 - re-exported for the UI
 from .services import Services
 from .store import IMPLEMENTATION_STATES, PROPOSAL_STATES, VERIFICATION_STATES
 
+_caller: ContextVar[str] = ContextVar("darwin_caller", default="agent")
+
+def _actor(services: Services) -> str:
+    return services.owner_id if _caller.get() == "ui" else "agent"
+
+
 AGENT_INSTRUCTIONS = """Darwin's Hoard keeps every discovery (GitHub repository, article, paper, video, idea) that could improve Faustus or a Hoard, where it came from (radar line, Ágora task, chat message, screenshot), what was proposed for which app, what was delivered (commit, task) and the capability tree of the family: Faustus > Hoard Hub > Hoards > absorbed modules > capabilities > tools.
-Before analysing a repository or idea, call darwin_add (or darwin_find): if it already exists you get its history and states and must not redo the work. darwin_source gives one discovery's full genealogy (captures with provenance, proposals per target app with their history, deliveries with commits). darwin_tree / darwin_capability_find answer «which app already does X» with evidence (declarada = manifest, viva = tool Faustus sees, probada = tested). darwin_propose records a proposal for a target app; darwin_set_state changes a state with history (never invent a delivered state: «integrada» needs a commit or a done Ágora task). darwin_gap_add records something Luis wants and no app does yet.
+Before analysing a repository or idea, call darwin_add (or darwin_find): if it already exists you get its history and states and must not redo the work. darwin_source gives one discovery's full genealogy (captures with provenance, proposals per target app with their history, deliveries with commits). darwin_tree / darwin_capability_find answer «which app already does X» with evidence (declarada = manifest, viva = tool Faustus sees, probada = tested). darwin_propose records a proposal for a target app; darwin_set_state changes a state with history (never invent a delivered state: «integrada» needs a commit or a done Ágora task). darwin_gap_add records something the owner wants and no app does yet.
 States are separate axes: proposal (pendiente, investigando, debatida, aceptada, aplazada, descartada, cubierta), implementation per delivery (sin_implementar, parcial, integrada, sustituida), verification (documentada, probada, recomprobar, desconocida).
 darwin_skill_impacts maps implemented repository deliveries to the published skills they improve, with documented reasons, commits and separately labelled term-match suggestions. Read the procedure with darwin_skill_impact_read before documenting a contribution with darwin_skill_impact_link. The source genealogy and radar include the same map; a link never edits a skill or proves a quality improvement."""
 
@@ -33,8 +40,8 @@ class FindArgs(BaseModel):
     target: str = Field("", max_length=60, description="App id (faustus, links, silver, hoardhub…).")
     channel: str = Field("", max_length=30, description="Capture channel: radar, radar-ideas, tracker, guide, agora, whatsapp, links, talos, agent, manual.")
     kind: str = Field("", max_length=20)
-    pinned: Optional[bool] = Field(None, description="Only what Luis marked himself (📌).")
-    commented: Optional[bool] = Field(None, description="true = only discoveries Luis commented on in the chat by quoting them (the ones he cares most about); false = the rest.")
+    pinned: Optional[bool] = Field(None, description="Only what the account holder marked (📌).")
+    commented: Optional[bool] = Field(None, description="true = only discoveries the account holder replied to in the chat; false = the rest.")
     radar_from: Optional[int] = Field(None, ge=0, le=100000)
     radar_to: Optional[int] = Field(None, ge=0, le=100000)
     order: Literal["recent", "oldest", "radar", "radar_desc", "captures", "title", "fitness"] = Field(
@@ -85,7 +92,7 @@ class WatchUpdateArgs(BaseModel):
 class ProposalsArgs(BaseModel):
     state: str = Field("", max_length=30)
     target: str = Field("", max_length=60)
-    origin: str = Field("", max_length=30, description="luis, agent, agora, radar, tracker…")
+    origin: str = Field("", max_length=30, description="owner, agent, agora, radar, tracker…")
     query: str = Field("", max_length=200)
     limit: int = Field(100, ge=1, le=500)
     offset: int = Field(0, ge=0)
@@ -247,7 +254,7 @@ class ImportArgs(BaseModel):
 class CommentsArgs(BaseModel):
     source_id: Optional[int] = Field(None, ge=1, description="Only the comments linked to this discovery.")
     query: str = Field("", max_length=200, description="Words in the comment or in the message it answers.")
-    from_luis: bool = Field(True, description="Only Luis's comments (false = also what other people of the group answered).")
+    from_me: bool = Field(True, description="Only the account holder's replies (false also includes other participants).")
     limit: int = Field(50, ge=1, le=500)
     offset: int = Field(0, ge=0)
 
@@ -268,7 +275,7 @@ class AskArgs(BaseModel):
 
 class LoginArgs(BaseModel):
     site: Literal["x", "instagram", "threads", "tiktok", "reddit", "facebook", "youtube"]
-    finish: bool = Field(False, description="Luis says he finished signing in: save the session now.")
+    finish: bool = Field(False, description="Save the session after the account holder signs in.")
     cancel: bool = Field(False, description="Close the sign-in window.")
 
 
@@ -279,7 +286,7 @@ class PostsArgs(BaseModel):
 
 class DiscussArgs(BaseModel):
     proposal_id: int = Field(..., ge=1)
-    note: str = Field("", max_length=4000, description="Optional note to add (posted by the agent darwin, marked as Luis's).")
+    note: str = Field("", max_length=4000, description="Optional note to add (attributed to its author and posted by the agent darwin).")
 
 
 class TriageArgs(BaseModel):
@@ -325,7 +332,7 @@ class RepoAliasArgs(BaseModel):
     path: str = Field("", max_length=500, description="Or a local folder that is a git repository.")
     subdir: str = Field("", max_length=300, description="Folder inside it where a folded app lives, e.g. galton_hoard.")
     search: bool = Field(False, description="Old umbrella name: look for its commits in every repository.")
-    remove: bool = Field(False, description="Drop Luis's entry for this name (a built-in alias comes back).")
+    remove: bool = Field(False, description="Drop the configured entry for this name (a built-in alias comes back).")
 
 
 def _find(s: Services, a: FindArgs) -> dict[str, Any]:
@@ -383,9 +390,12 @@ def _add(s: Services, a: AddArgs) -> dict[str, Any]:
     if not refs and (repo_of(text) or text.startswith("http")):
         refs = [{"key": source_key(url=text if text.startswith("http") else "", repo=repo_of(text) or ""), "url": canonical_url(text) if text.startswith("http") else f"https://github.com/{repo_of(text)}", "kind": "url"}]
     capture_key = f"{a.channel}:{source_key(title=text)[5:]}"
-    cid, created = s.store.add_capture(capture_key=capture_key, channel=a.channel, text=text, author=a.author or a.channel,
+    actor_role = "owner" if _caller.get() == "ui" else "agent"
+    actor = _actor(s)
+    author = actor if a.channel in ("agent", "manual") else a.author or actor
+    cid, created = s.store.add_capture(capture_key=capture_key, channel=a.channel, text=text, author=author,
                                        declared={"note": a.note, "target": a.target} if (a.note or a.target) else None,
-                                       provenance={"via": "darwin_add", "at": time.time()})
+                                       provenance={"via": "darwin_add", "at": time.time(), "actor": actor, "actor_role": actor_role})
     results = []
     for ref in refs:
         existed = s.store.source_by_key(ref["key"])
@@ -395,7 +405,7 @@ def _add(s: Services, a: AddArgs) -> dict[str, Any]:
         if a.target:
             src = s.store.source(sid)
             s.store.upsert_proposal(key=f"{src['key']}->{a.target}", source_id=sid, target=a.target, state="pendiente",
-                                    origin=a.channel if a.channel != "manual" else "luis", reason=a.note)
+                                    origin=(f"owner:{actor}" if actor_role == "owner" else "agent") if a.channel == "manual" else a.channel, reason=a.note, by=actor)
         g = query.genealogy(s.store, source_id=sid)
         results.append({"existing": bool(existed), "candidate": ref.get("kind") == "candidate", "source": g["source"],
                         "state": g["state"], "proposals": g["proposals"], "deliveries": g["deliveries"]})
@@ -408,9 +418,9 @@ def _add(s: Services, a: AddArgs) -> dict[str, Any]:
 
 def _comments(s: Services, a: CommentsArgs) -> dict[str, Any]:
     if a.source_id:
-        items = replies.comments_of(s.store, a.source_id, only_luis=a.from_luis)
+        items = replies.comments_of(s.store, a.source_id, only_mine=a.from_me)
         return {"total": len(items), "items": items[a.offset:a.offset + a.limit]}
-    return replies.comments(s.store, from_luis=a.from_luis, query=a.query, limit=a.limit, offset=a.offset)
+    return replies.comments(s.store, from_me=a.from_me, query=a.query, limit=a.limit, offset=a.offset)
 
 
 def _propose(s: Services, a: ProposeArgs) -> dict[str, Any]:
@@ -421,15 +431,15 @@ def _propose(s: Services, a: ProposeArgs) -> dict[str, Any]:
                                   origin="agent", reason=a.reason, capability_key=a.capability, agora_space=a.agora_space,
                                   agora_task=a.agora_task, by="agent")
     out = {"proposal": s.store.one("SELECT * FROM proposals WHERE id=?", (pid,)), "history": s.store.history_of("proposals", pid)}
-    luis = replies.comments_of(s.store, a.source_id, only_luis=True)
-    if luis:        # what Luis said about it is the main context of the proposal: shown, so the reason can rest on it
-        out["luis_comments"] = [c["line"] for c in luis]
+    own_comments = replies.comments_of(s.store, a.source_id, only_mine=True)
+    if own_comments:
+        out["own_comments"] = [c["line"] for c in own_comments]
     return out
 
 
 def _source_correct(s: Services, a: SourceCorrectArgs) -> dict[str, Any]:
     try:
-        out = s.store.correct_source(a.source_id, a.into_id, by=a.by, note=a.note)
+        out = s.store.correct_source(a.source_id, a.into_id, by=_actor(s), note=a.note)
     except KeyError as exc:
         raise DarwinError("not_found", str(exc.args[0]), "Search with darwin_find.") from exc
     except ValueError as exc:
@@ -449,7 +459,9 @@ def _set_state(s: Services, a: SetStateArgs) -> dict[str, Any]:
         if row and not (row["commit_sha"] or row["agora_task"]):
             raise DarwinError("invalid", "«integrada» needs a commit or an Ágora task on the delivery.", "Record the evidence first.")
     try:
-        changed = s.store.set_state(a.entity, a.id, a.field, a.value, by=a.by, note=a.note)
+        actor = _actor(s)
+        origin = f"owner:{actor}" if _caller.get() == "ui" else "agent"
+        changed = s.store.set_state(a.entity, a.id, a.field, a.value, by=actor, note=a.note, proposal_origin=origin)
     except KeyError as exc:
         raise DarwinError("not_found", str(exc)) from exc
     return {"changed": changed, "history": s.store.history_of(a.entity, a.id)}
@@ -492,13 +504,13 @@ def _suit_import(s: Services, a: SuitEvalImportArgs) -> dict[str, Any]:
 
 def _mark(s: Services, a: MarkArgs) -> dict[str, Any]:
     out = backing.mark(s.store, a.key, implemented=a.implemented, evidence=[e.model_dump() for e in a.evidence] if a.implemented else None,
-                       note=a.note, by=a.by)
-    out["gaps"] = reconcile.reconcile(s.store, by=a.by)
+                       note=a.note, by=_actor(s))
+    out["gaps"] = reconcile.reconcile(s.store, by=_actor(s))
     return out
 
 
 def _reconcile(s: Services, a: ReconcileArgs) -> dict[str, Any]:
-    out = reconcile.reconcile(s.store, confirm_ids=a.confirm_ids, dismiss_ids=a.dismiss_ids, by=a.by)
+    out = reconcile.reconcile(s.store, confirm_ids=a.confirm_ids, dismiss_ids=a.dismiss_ids, by=_actor(s))
     if a.semantic:
         out["semantic"] = reconcile.semantic(s.store, _family_chat(), limit=a.limit)
         out.update(reconcile.listing(s.store))
@@ -554,7 +566,7 @@ TOOLS: list[Tool] = [
          lambda s, a: tree.find(s.store, a.query, a.limit, a.tools)),
     Tool("darwin_tree_refresh", _d("Rebuild the capability tree now from the hub, Faustus's tool catalogue and the manifests."),
          Empty, ann(idempotent=True), lambda s, a: s.refresh_tree(), timeout_s=120),
-    Tool("darwin_gaps", _d("Gaps: things Luis wants that no app does yet, with the ones the tree now answers flagged possibly_stale.",
+    Tool("darwin_gaps", _d("Gaps: things the owner wants that no app does yet, with the ones the tree now answers flagged possibly_stale.",
                            "«open» counts only gaps not flagged; a flagged gap shows the capability and its evidence."), Empty, ann(read_only=True), _gaps),
     Tool("darwin_gaps_reconcile", _d("Flag gaps that a capability marked implemented with evidence now answers (possibly stale); list them.",
                                      "Never closes a gap by itself. confirm_ids resolves gaps a person checked; dismiss_ids keeps a flagged gap open.",
@@ -601,7 +613,7 @@ TOOLS: list[Tool] = [
                                         "reads «imported». Summary keys: integrated, integrated:<via>, imported, not_in_main, unknown:<reason>.",
                                         "comprobar entregas, commits en main, historia reescrita, equivalente"),
          Empty, ann(idempotent=True), lambda s, a: s.verify_deliveries(), timeout_s=600),
-    Tool("darwin_repo_aliases", _d("Where each repository name deliveries use lives today: built-in and Luis's aliases, the folder of apps "
+    Tool("darwin_repo_aliases", _d("Where each repository name deliveries use lives today: built-in and configured aliases, the folder of apps "
                                    "folded into others, and the names nothing resolves yet.",
                                    synonyms="mapa de repositorios, alias de repos, repos renombrados, apps fusionadas"),
          Empty, ann(read_only=True), lambda s, a: s.repo_aliases()),
@@ -616,22 +628,22 @@ TOOLS: list[Tool] = [
                                    "give the commit you found (git log --all, patch-id, subject) and say how in note.",
                                    "corregir entrega, arreglar commit de una entrega, entrega sin prueba"),
          FixDeliveryArgs, ann(idempotent=True), lambda s, a: s.fix_delivery(a.id, repo=a.repo, commit_sha=a.commit_sha, agora_task=a.agora_task,
-                                                                             note=a.note, by=a.by, clear_commit=a.clear_commit), timeout_s=300),
+                                                                             note=a.note, by=_actor(s), clear_commit=a.clear_commit), timeout_s=300),
     Tool("darwin_whatsapp_chats", _d("WhatsApp chats Faustus's bridge knows (to pick the Gittrend chat's exact JID)."),
          ChatsArgs, ann(read_only=True), lambda s, a: {"chats": s.whatsapp_chats(a.query)}),
     Tool("darwin_sync_whatsapp", _d("Read the chosen WhatsApp chat through Faustus's bridge, page by page, without repeating what is stored.",
                                     "Read only: it never sends or marks anything as read.", "gittrend, sincronizar whatsapp"),
          SyncArgs, ann(idempotent=True), lambda s, a: s.sync_whatsapp(chat=a.chat, max_pages=a.max_pages, from_start=a.from_start), timeout_s=600),
-    Tool("darwin_comments", _d("Comments of Luis in the chat that quote a message («Luis: … (en respuesta a …)»), each with the discoveries it is linked to.",
-                               "A reply to a reel or link belongs to that discovery: it says why he sent it and for which app. Use it as the main context "
+    Tool("darwin_comments", _d("Quoted chat replies with sender and linked discoveries.",
+                               "A reply to a reel or link belongs to that discovery: it explains why it was sent and for which app. Use it as the main context "
                                "before proposing or triaging; darwin_source and darwin_find (commented) show the same per discovery.",
-                               "comentarios de Luis, respuestas citadas, qué dijo Luis de, por qué lo mandó"),
+                               "comentarios propios, respuestas citadas, qué dijo la cuenta, por qué se envió"),
          CommentsArgs, ann(read_only=True), _comments),
     Tool("darwin_ask", _d("Answer a question in plain words from the capability tree, the discoveries and the gaps, citing them.",
                           "Retrieval runs locally; the answer is written by the family's local model. Without a model the material is returned.",
                           "pregunta, preguntar, qué tenemos, quién hace"),
          AskArgs, ann(read_only=True), lambda s, a: s.ask(a.question), timeout_s=180),
-    Tool("darwin_import_links", _d("Bring in what Luis saved in Links for Darwin: links tagged darwin and every GitHub repository (idempotent).",
+    Tool("darwin_import_links", _d("Bring in what the owner saved in Links for Darwin: links tagged darwin and every GitHub repository (idempotent).",
                                    "Words of a title never become a guessed owner/name.", "links, enlaces guardados, importar"),
          Empty, ann(idempotent=True), lambda s, a: s.import_links(), timeout_s=120),
     Tool("darwin_brain_export", _d("Write Darwin into Faustus's Brain as linked Markdown notes (Notes/Darwin: index, one note per app, one per live discovery).",
@@ -640,7 +652,7 @@ TOOLS: list[Tool] = [
     Tool("darwin_accounts", _d("Which sites Links holds a signed-in session for (X, Instagram, Threads, TikTok, Reddit…), to read posts.",
                                "No cookie values are ever returned.", "cuentas, sesiones, conectar instagram, conectar x"),
          Empty, ann(read_only=True), lambda s, a: s.accounts(), timeout_s=30),
-    Tool("darwin_account_login", _d("Open Links' sign-in window for a site on Luis's computer; he signs in himself and the session is kept.",
+    Tool("darwin_account_login", _d("Open Links' sign-in window for a site on the account holder's computer; the account holder signs in and the session is kept.",
                                     "Never ask for or type a password.", "conectar cuenta, iniciar sesión"),
          LoginArgs, ann(), lambda s, a: s.account_login(a.site, finish=a.finish, cancel=a.cancel), timeout_s=60),
     Tool("darwin_read_posts", _d("Read the social posts behind discoveries (X, Instagram, Threads…) with the signed-in sessions and link the repositories and links inside.",
@@ -650,9 +662,9 @@ TOOLS: list[Tool] = [
          PostsArgs, ann(idempotent=True), lambda s, a: s.read_posts(limit=a.limit, digest=a.digest), timeout_s=900),
     Tool("darwin_discuss", _d("Open (or show) the Ágora thread that debates one proposal, with the discovery's genealogy; an optional note is added.",
                               "One thread per proposal, kept on it; Darwin writes as the agent darwin.", "debatir, discutir, ágora"),
-         DiscussArgs, ann(), lambda s, a: s.discuss(a.proposal_id, a.note), timeout_s=60),
+         DiscussArgs, ann(), lambda s, a: s.discuss(a.proposal_id, note=a.note, note_by=_actor(s)), timeout_s=60),
     Tool("darwin_triage", _d("Suggest an app for discoveries nobody proposed yet: a pending proposal with origin agent, or a note that it is noise.",
-                             "The family's local model picks from the real app catalogue; Luis's decisions are never overwritten.",
+                             "The family's local model picks from the real app catalogue; the owner's decisions take precedence.",
                              "repartir, clasificar, triaje, proponer apps"),
          TriageArgs, ann(idempotent=True), lambda s, a: s.triage(channel=a.channel, limit=a.limit), timeout_s=900),
     Tool("darwin_read_screenshots", _d("Read the unread screenshots in the inbox with the family's OCR and link the repositories and links they show.",
@@ -674,7 +686,7 @@ TOOLS: list[Tool] = [
                                 "buscar repos para carencias, lanzar radar"),
          RadarRunArgs, ann(idempotent=True), lambda s, a: s.radar_run(top=a.top, per_gap=a.per_gap, add=a.add, gap_ids=a.gap_ids or None, web=a.web),
          timeout_s=240),
-    Tool("darwin_watch_add", _d("Keep a question («avísame cuando…»): Darwin asks it again every few hours and tells Luis only when the answer grows.",
+    Tool("darwin_watch_add", _d("Keep a question («avísame cuando…»): Darwin asks it again every few hours and notifies the owner only when the answer grows.",
                                 "The first check is the baseline; later ones report new discoveries, state changes and apps.",
                                 "avísame cuando, pregunta guardada, vigilar"), WatchAddArgs, ann(),
          lambda s, a: watches.add(s.store, a.question, note=a.note, target=a.target)),
@@ -703,5 +715,37 @@ def tool_catalog() -> list[dict[str, Any]]:
     return _catalog(TOOLS)
 
 
+def _legacy_reply_fields(value: Any, actors: set[str]) -> None:
+    if isinstance(value, list):
+        for item in value:
+            _legacy_reply_fields(item, actors)
+    elif isinstance(value, dict):
+        for key, item in list(value.items()):
+            if key in {"own_comment", "own_comments", "from_me"}:
+                for actor in actors:
+                    alias = f"from_{actor}" if key == "from_me" else f"{actor}_{key.removeprefix('own_')}"
+                    value.setdefault(alias, item)
+            if key in {"items", "captures", "comments", "reply"}:
+                _legacy_reply_fields(item, actors)
+
+
 def call_tool(svc: Services, name: str, arguments: Optional[dict[str, Any]], caller: str = "agent") -> Any:
-    return _call_tool(TOOLS_BY_NAME, svc, name, arguments)
+    legacy_ids = set(getattr(getattr(svc, "store", None), "legacy_owner_ids", ()))
+    if name == "darwin_comments" and arguments and "from_me" not in arguments:
+        # Older clients used a single from_<account holder> flag. The account id
+        # need not already exist in a newly created or imported profile.
+        aliases = [key for key in arguments if key.startswith("from_") and len(key) > 5]
+        known = [key for key in aliases if key[5:] in legacy_ids]
+        choices = known or aliases
+        if len(choices) == 1:
+            key = choices[0]
+            arguments = {**arguments, "from_me": arguments[key]}
+            legacy_ids.add(key[5:])
+    token = _caller.set(caller)
+    try:
+        result = _call_tool(TOOLS_BY_NAME, svc, name, arguments)
+        if legacy_ids and name in {"darwin_comments", "darwin_source", "darwin_find", "darwin_propose", "darwin_inbox"}:
+            _legacy_reply_fields(result, legacy_ids)
+        return result
+    finally:
+        _caller.reset(token)

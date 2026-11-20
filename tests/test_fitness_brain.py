@@ -15,7 +15,7 @@ def _seed(tmp_path):
                               seen_at=time.time())
     store.upsert_proposal(key="p1", source_id=hot, target="talos", state="pendiente", origin="agent")
     done = store.upsert_source(repo="b/done", title="done", stars="50k", seen_at=time.time())
-    store.upsert_proposal(key="p2", source_id=done, target="talos", state="descartada", origin="luis")
+    store.upsert_proposal(key="p2", source_id=done, target="talos", state="descartada", origin="owner")
     return store, hot, done
 
 

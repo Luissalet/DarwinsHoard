@@ -48,7 +48,7 @@ def darwin_proposal_refs(title: str) -> list[int]:
 
 
 LABELS = [  # (pattern, label) - first match wins
-    (r"\bdecisi[oó]n de Luis\b", "decision-luis"),
+    (r"\b[Dd]ecisi[oó]n de (?:la persona responsable|[A-ZÁÉÍÓÚÑ][\w-]*)\b", "owner-decision"),
     (r"\bfuera de tema\b", "off-topic"),
     (r"\bSKIP\b", "skip"),
     (r"\bCOVERED\b", "covered"),
@@ -60,7 +60,7 @@ LABELS = [  # (pattern, label) - first match wins
 ]
 LABEL_STATE = {"skip": "descartada", "off-topic": "descartada", "discarded": "descartada", "covered": "cubierta",
                "partial": "pendiente", "new": "pendiente", "implement": "aceptada", "reference": "pendiente",
-               "decision-luis": "pendiente", "": "pendiente"}
+               "owner-decision": "pendiente", "": "pendiente"}
 
 #: Words in the documents that name a family app, mapped to the app id the hub uses. Absorbed apps keep their own id
 #: (the hub lists them as aliases of the host): the tree shows where they live today.
@@ -175,7 +175,7 @@ class LegacyImporter:
         key = f"{channel}:{e.number}:{_sha(e.line.strip())[:20]}"
         _, created = self.store.add_capture(capture_key=key, channel=channel, text=e.line.strip(), url=canonical_url(e.url) if e.url else "",
                                             provenance={"file": file, "line": e.lineno, "file_sha256": file_sha, "radar_no": e.number},
-                                            declared=declared, source_id=sid, author="luis" if e.pinned else "radar")
+                                            declared=declared, source_id=sid, author="owner" if e.pinned else "radar")
         return created
 
     def _proposal(self, sid: int, target: str, state: str, origin: str, *, reason: str = "", declared: Optional[dict] = None,

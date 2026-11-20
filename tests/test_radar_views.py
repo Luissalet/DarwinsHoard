@@ -99,7 +99,7 @@ def test_proposals_filters_and_panel(tmp_path):
     s1 = store.upsert_source(repo="a/ocr-tool", title="ocr tool")
     s2 = store.upsert_source(repo="b/battle", title="battle ai")
     store.upsert_proposal(key="p1", source_id=s1, target="talos", state="pendiente", origin="agent", reason="better OCR")
-    store.upsert_proposal(key="p2", source_id=s2, target="silver", state="aceptada", origin="luis")
+    store.upsert_proposal(key="p2", source_id=s2, target="silver", state="aceptada", origin="owner")
     lst = views.proposals(store, target="talos")
     assert lst["total"] == 1 and lst["items"][0]["title"] == "ocr tool" and lst["counts"]["pendiente"] == 1
     assert views.proposals(store, query_text="battle")["items"][0]["target"] == "silver"

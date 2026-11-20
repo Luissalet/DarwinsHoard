@@ -23,7 +23,12 @@ def proposals(store: Store, *, state: str = "", target: str = "", origin: str = 
     if target:
         where.append("p.target=?")
         args.append(target)
-    if origin:
+    if origin == "owner" or origin in store.legacy_owner_ids:
+        owner_origins = ["owner", *sorted(store.legacy_owner_ids)]
+        placeholders = ",".join("?" for _ in owner_origins)
+        where.append(f"substr(p.origin, 1, instr(p.origin || ':', ':') - 1) IN ({placeholders})")
+        args.extend(owner_origins)
+    elif origin:
         where.append("p.origin LIKE ?")
         args.append(origin + "%")
     for word in query_text.lower().split()[:6]:
@@ -37,8 +42,15 @@ def proposals(store: Store, *, state: str = "", target: str = "", origin: str = 
                    f"FROM proposals p LEFT JOIN sources s ON s.id=p.source_id WHERE {sql_where} "
                    "ORDER BY p.updated DESC, p.id DESC LIMIT ? OFFSET ?", [*args, limit, offset])
     counts = {r["state"]: r["n"] for r in store.q("SELECT state, COUNT(*) AS n FROM proposals GROUP BY state")}
-    origins = {r["o"]: r["n"] for r in store.q("SELECT COALESCE(NULLIF(substr(origin, 1, instr(origin || ':', ':') - 1), ''), '?') AS o, "
-                                               "COUNT(*) AS n FROM proposals GROUP BY o")}
+    origins: dict[str, int] = {}
+    for row in store.q("SELECT substr(origin, 1, instr(origin || ':', ':') - 1) AS origin, COUNT(*) AS n FROM proposals GROUP BY 1"):
+        role = store.origin_role(row["origin"]) or "?"
+        origins[role] = origins.get(role, 0) + row["n"]
+    for row in rows:
+        row["origin_role"] = store.origin_role(row["origin"])
+        if row["origin_role"] == "owner":
+            raw_origin = row["origin"]
+            row["origin_actor"] = raw_origin.removeprefix("owner:") if raw_origin != "owner" else ""
     return {"total": total, "offset": offset, "limit": limit, "items": rows, "counts": {k: counts.get(k, 0) for k in PROPOSAL_STATES},
             "origins": origins}
 
