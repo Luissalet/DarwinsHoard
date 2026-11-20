@@ -23,7 +23,7 @@ def proposals(store: Store, *, state: str = "", target: str = "", origin: str = 
     if target:
         where.append("p.target=?")
         args.append(target)
-    if origin == "owner":
+    if origin == "owner" or origin in store.legacy_owner_ids:
         owner_origins = ["owner", *sorted(store.legacy_owner_ids)]
         placeholders = ",".join("?" for _ in owner_origins)
         where.append(f"substr(p.origin, 1, instr(p.origin || ':', ':') - 1) IN ({placeholders})")

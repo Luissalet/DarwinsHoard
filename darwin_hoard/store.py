@@ -137,7 +137,11 @@ class Store:
         self._conn.executescript(SCHEMA)
         self.owner_label = ""
         self.whatsapp_account = ""
-        self.legacy_owner_ids: set[str] = set()
+        # Old manual proposals stored the owner identifier as an unqualified origin.
+        # The other unqualified values emitted by the product are the named channels below.
+        self.legacy_owner_ids = {row["origin"] for row in self.q(
+            "SELECT DISTINCT origin FROM proposals WHERE origin<>'' AND instr(origin, ':')=0"
+        ) if row["origin"] not in _ORIGIN_RANK}
 
     def close(self) -> None:
         with self._lock:
@@ -168,8 +172,8 @@ class Store:
         previous = self.q("SELECT DISTINCT author FROM captures WHERE channel='manual' AND "
                           "json_extract(provenance,'$.via')='darwin_add' AND "
                           "json_extract(provenance,'$.actor_role') IS NULL")
-        self.legacy_owner_ids = {actor for actor in [*legacy_ids, *(row["author"] for row in previous)]
-                                if actor and actor not in _ORIGIN_RANK and actor != "manual"}
+        self.legacy_owner_ids.update(actor for actor in [*legacy_ids, *(row["author"] for row in previous)]
+                                     if actor and actor not in _ORIGIN_RANK)
 
     def origin_role(self, origin: str) -> str:
         prefix = (origin or "").split(":", 1)[0]
@@ -496,4 +500,4 @@ class Store:
 
 
 #: Who may override a proposal state set by whom: a person or the Ágora outranks a document; a document outranks a guess.
-_ORIGIN_RANK = {"": 0, "mention": 1, "guide": 2, "radar": 2, "radar-ideas": 2, "tracker": 3, "agora": 4, "agent": 4, "owner": 5}
+_ORIGIN_RANK = {"": 0, "mention": 1, "links": 1, "talos": 1, "whatsapp": 1, "manual": 1, "guide": 2, "radar": 2, "radar-ideas": 2, "tracker": 3, "agora": 4, "agent": 4, "owner": 5}

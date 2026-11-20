@@ -2,7 +2,7 @@
 
 **Purpose:** before proposing, researching or building something, ask Darwin whether it was already seen, proposed, delivered or covered by another app.
 
-The attribution fields in the WhatsApp panel configure the owner’s display name and account separately. The browser records owner actions; agent calls record an agent action. Chat filtering uses the bridge’s `from_me` flag. Stored account values and previous authors remain in history. If a historical profile used a separate owner identifier, its settings can list that identifier in `legacy_owner_ids`.
+The attribution fields in the WhatsApp panel configure the owner’s display name and account separately. The browser records owner actions; agent calls record an agent action. Chat filtering uses the bridge’s `from_me` flag. Stored account values, origins and previous authors remain in history. Existing unqualified owner origins classify as owner, and a legacy `from_<account>` reply filter is accepted alongside `from_me`. An additional historical identifier can be configured in `legacy_owner_ids`.
 
 ## When to call what
 

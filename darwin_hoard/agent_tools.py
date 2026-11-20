@@ -730,18 +730,22 @@ def _legacy_reply_fields(value: Any, actors: set[str]) -> None:
 
 
 def call_tool(svc: Services, name: str, arguments: Optional[dict[str, Any]], caller: str = "agent") -> Any:
+    legacy_ids = set(getattr(getattr(svc, "store", None), "legacy_owner_ids", ()))
     if name == "darwin_comments" and arguments and "from_me" not in arguments:
-        for actor in sorted(getattr(svc.store, "legacy_owner_ids", ())):
-            if (legacy_key := f"from_{actor}") in arguments:
-                arguments = {**arguments, "from_me": arguments[legacy_key]}
-                break
+        # Older clients used a single from_<account holder> flag. The account id
+        # need not already exist in a newly created or imported profile.
+        aliases = [key for key in arguments if key.startswith("from_") and len(key) > 5]
+        known = [key for key in aliases if key[5:] in legacy_ids]
+        choices = known or aliases
+        if len(choices) == 1:
+            key = choices[0]
+            arguments = {**arguments, "from_me": arguments[key]}
+            legacy_ids.add(key[5:])
     token = _caller.set(caller)
     try:
         result = _call_tool(TOOLS_BY_NAME, svc, name, arguments)
-        if name in {"darwin_comments", "darwin_source", "darwin_find", "darwin_propose", "darwin_inbox"}:
-            legacy_ids = getattr(svc.store, "legacy_owner_ids", ())
-            if legacy_ids:
-                _legacy_reply_fields(result, legacy_ids)
+        if legacy_ids and name in {"darwin_comments", "darwin_source", "darwin_find", "darwin_propose", "darwin_inbox"}:
+            _legacy_reply_fields(result, legacy_ids)
         return result
     finally:
         _caller.reset(token)
