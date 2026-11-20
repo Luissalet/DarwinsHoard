@@ -2,7 +2,7 @@
 
 The scheduled radar task («Radar diario de ideas para Faustus y los Hoards») is disabled since 11-10-2026 and its instructions still
 point at the old folders and at loose Markdown files. This is the version that registers every finding in Darwin. It replaces the
-task's instructions once Luis approves the change (the scheduled-task edit needs his permission).
+task's instructions once the owner approves the scheduled-task update.
 
 Agents call Darwin from PowerShell with `darwin.ps1` (JSON arguments in a UTF-8 file):
 
@@ -25,7 +25,7 @@ Agents call Darwin from PowerShell with `darwin.ps1` (JSON arguments in a UTF-8 
    - trendshift.io, plus the plan's queries for the open gaps and the Hoards' domains;
    - Hacker News, llama.cpp/Ollama releases, arXiv cs.CL/cs.AI.
    
-   A page that fails is skipped. Only features: no security, permissions, telemetry or caps (Luis, 11-10-2026).
+   A page that fails is skipped. Only features: no security, permissions, telemetry or caps.
 3. **Dedupe and classify in Darwin.**
    - Every candidate goes through `darwin_add` with `{"text": url, "channel": "radar", "note": what it does and could bring}`. `existing: true` means it was already seen: report its state and move on.
    - Coverage: `darwin_coverage` with the discovery's id (covered / partial / gap with the matching nodes), `darwin_capability_find`
@@ -38,7 +38,7 @@ Agents call Darwin from PowerShell with `darwin.ps1` (JSON arguments in a UTF-8 
    - `darwin_discuss` opens the debate of a proposal.
 5. **Implementation.** One or two open radar tasks, directly in the real repository on its main branch (no worktrees or copies),
    with tests and a live check.
-   - Commits as Luissalet, in English, without trailers; stage only your own files; never push.
+   - Commits use the Git identity in the shared criteria and English messages, without trailers; stage only your own files; never push.
    - Submit in the Ágora with the commits.
    - Once integrated, `darwin_set_state` with the commit.
 6. **Close.** Six lines at most: discoveries registered (new and already seen), proposals, Ágora tasks, implemented (sha).

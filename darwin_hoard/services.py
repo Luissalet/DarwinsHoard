@@ -22,7 +22,10 @@ from .tree import TreeBuilder
 log = logging.getLogger("darwin")
 
 DEFAULT_SETTINGS: dict[str, Any] = {
-    "whatsapp_account": "luis",
+    "owner_id": "",
+    "owner_name": "",
+    "legacy_owner_ids": [],
+    "whatsapp_account": "",
     "whatsapp_chat": "",                 # exact JID of the «Gittrend» chat; empty = not synced
     "whatsapp_chat_name": "",            # its display name, for the page
     "whatsapp_sync_minutes": 0,      # 0 = only on demand
@@ -52,6 +55,7 @@ class Services:
         suit_seeds.seed(self.store)  # the six suits of proposal 36, once
         self.settings_path = config.data_dir / "settings.json"
         self.settings = {**DEFAULT_SETTINGS, **(read_json(self.settings_path, default={}) or {})}
+        self._configure_attribution()
         self.importer = LegacyImporter(self.store)
         self.ocr_job: dict[str, Any] = {"running": False}
         self.triage_job: dict[str, Any] = {"running": False}
@@ -183,7 +187,7 @@ class Services:
 
     def set_repo_alias(self, name: str, *, repo: str = "", path: str = "", subdir: str = "", search: bool = False,
                        remove: bool = False) -> dict[str, Any]:
-        """Luis's own alias (saved in settings ``repo_aliases``); ``remove`` drops his entry (built-in ones come back)."""
+        """The owner's alias (saved in settings ``repo_aliases``); ``remove`` drops his entry (built-in ones come back)."""
         name = (name or "").strip()
         if not name:
             raise ValueError("name is required")
@@ -346,9 +350,14 @@ class Services:
         a reply quotes) instead of duplicated."""
         from darwin_ingest import sync_whatsapp_page
         chat = chat or self.settings.get("whatsapp_chat") or ""
-        account = account or self.settings.get("whatsapp_account") or "luis"
+        account = account or self.settings.get("whatsapp_account")
         if "@" not in chat:
             raise ValueError("Choose the chat first (its exact JID, e.g. 1203…@g.us): darwin_whatsapp_chats lists them.")
+        if not account:
+            previous = self.store.one("SELECT json_extract(provenance,'$.account') AS account FROM captures "
+                                      "WHERE channel='whatsapp' AND chat=? AND json_extract(provenance,'$.account')<>'' "
+                                      "ORDER BY id DESC LIMIT 1", (chat,))
+            account = (previous or {}).get("account") or self.owner_id
         lock = self._sync_locks.setdefault(f"{account}|{chat}", threading.Lock())
         if not lock.acquire(blocking=False):
             return {"busy": True, "chat": chat}
@@ -422,10 +431,10 @@ class Services:
         from .hoard_link._hubclient import fetch_detailed
         return family._hub(), family._headers(), fetch_detailed
 
-    def discuss(self, proposal_id: int, note: str = "") -> dict[str, Any]:
+    def discuss(self, proposal_id: int, note: str = "", *, note_by: str = "agent") -> dict[str, Any]:
         from . import debate
         hub, headers, fetch = self._hub_io()
-        return debate.discuss(self.store, proposal_id, hub, headers, fetch, note=note)
+        return debate.discuss(self.store, proposal_id, hub, headers, fetch, note=note, note_by=note_by)
 
     def proposal_thread(self, proposal_id: int) -> dict[str, Any]:
         from . import debate
@@ -742,6 +751,17 @@ class Services:
         from darwin_ingest import ingest_batch
         return ingest_batch(self.store, records, channel=channel)
 
+    @property
+    def owner_id(self) -> str:
+        return str(self.settings.get("owner_id") or self.settings.get("owner_name") or "owner").strip()[:60] or "owner"
+
+    def _configure_attribution(self) -> None:
+        legacy_ids = self.settings.get("legacy_owner_ids") or []
+        ids = [str(actor) for actor in legacy_ids] if isinstance(legacy_ids, list) else []
+        ids.append(str(self.settings.get("whatsapp_account") or ""))
+        label = str(self.settings.get("owner_name") or self.settings.get("owner_id") or "").strip()[:80]
+        self.store.configure_attribution(label, ids, str(self.settings.get("whatsapp_account") or ""))
+
     def update_settings(self, changes: dict[str, Any]) -> dict[str, Any]:
         for key, value in changes.items():
             if key not in DEFAULT_SETTINGS:
@@ -749,6 +769,8 @@ class Services:
             if value is not None:
                 self.settings[key] = value
         write_json_atomic(self.settings_path, self.settings)
+        if changes.keys() & {"owner_id", "owner_name", "legacy_owner_ids", "whatsapp_account"}:
+            self._configure_attribution()
         return dict(self.settings)
 
     def health(self) -> dict[str, Any]:

@@ -22,14 +22,14 @@ def test_the_wrong_source_folds_into_the_right_one(tmp_path):
     store, wrong, right, cap_w = _pair(tmp_path)
     store.upsert_proposal(key="repo:nousresearch/hermes-official-plugins->hermes", source_id=right, target="hermes", reason="plugins")
     assert wrong in {r["id"] for r in query.find(store, state="sin_propuesta", limit=50)["items"]}
-    out = store.correct_source(wrong, right, by="luis", note="OCR cut the name")
+    out = store.correct_source(wrong, right, by="profile-owner", note="OCR cut the name")
     assert out["corrected"] == wrong and store.source(wrong) is None
     assert store.one("SELECT source_id FROM captures WHERE id=?", (cap_w,))["source_id"] == right
     assert store.one("SELECT COUNT(*) AS n FROM capture_sources WHERE source_id=?", (right,))["n"] == 2
     assert store.source(right)["captures"] == 2
     assert store.source_by_key("repo:nousresearch/hern")["id"] == right          # the old key still lands
     meta = store.source(right)["meta"]["corrections"][0]
-    assert meta["key"] == "repo:nousresearch/hern" and meta["summary"] == "cut by the screenshot" and meta["by"] == "luis"
+    assert meta["key"] == "repo:nousresearch/hern" and meta["summary"] == "cut by the screenshot" and meta["by"] == "profile-owner"
     assert store.history_of("sources", right)[0]["field"] == "correction"
     assert wrong not in {r["id"] for r in query.find(store, state="sin_propuesta", limit=50)["items"]}
 
@@ -46,7 +46,7 @@ def test_proposals_and_deliveries_of_the_wrong_one_move_with_it(tmp_path):
 
 def test_two_proposals_for_the_same_app_keep_the_right_ones_and_the_history_of_both(tmp_path):
     store, wrong, right, _ = _pair(tmp_path)
-    keep = store.upsert_proposal(key="repo:nousresearch/hermes-official-plugins->hermes", source_id=right, target="hermes", state="aceptada", origin="luis")
+    keep = store.upsert_proposal(key="repo:nousresearch/hermes-official-plugins->hermes", source_id=right, target="hermes", state="aceptada", origin="owner")
     dup = store.upsert_proposal(key="repo:nousresearch/hern->hermes", source_id=wrong, target="hermes")
     store.set_state("proposals", dup, "state", "investigando", by="agent")
     did = store.upsert_delivery(key="d1", source_id=wrong, target="hermes", proposal_id=dup, commit_sha="abc1234")
@@ -71,7 +71,7 @@ def test_the_tool_is_in_the_catalogue_and_answers_with_the_genealogy(tmp_path):
     svc = Services.__new__(Services)
     svc.store = store
     svc.skill_impacts = lambda **k: {}
-    got = agent_tools.call_tool(svc, "darwin_source_correct", {"source_id": wrong, "into_id": right, "note": "ocr", "by": "luis"})
+    got = agent_tools.call_tool(svc, "darwin_source_correct", {"source_id": wrong, "into_id": right, "note": "ocr", "by": "profile-owner"})
     assert got["corrected"] == wrong and got["source"]["source"]["id"] == right
     with pytest.raises(DarwinError):
         agent_tools.call_tool(svc, "darwin_source_correct", {"source_id": wrong, "into_id": right})

@@ -3,6 +3,8 @@
 // and the gaps. Every action goes through the same tools the agents use (/api/ui/call).
 
 const $ = (id) => document.getElementById(id);
+const english = navigator.language.toLowerCase().startsWith('en');
+const label = (es, en) => english ? en : es;
 const plain = (s) => String(s ?? '').replace(/\*\*/g, '').replace(/`/g, '');
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const STATE_LABEL = { integrada: 'Integrada', mixta: 'En parte', parcial: 'Parcial', aceptada: 'Aceptada', investigando: 'En marcha', debatida: 'Debatida',
@@ -18,6 +20,7 @@ const OP_STATE = { backed: ['con prueba', 'st-integrada'], unproven: ['existe, s
 const EVID_LABEL = { commit: 'commit', test: 'test', qa_file: 'QA' };
 const evidenceHtml = (list) => (list || []).map((e) => `<span class="chip" title="${esc(e.note || '')}">${EVID_LABEL[e.kind] || esc(e.kind)}: <code>${esc(e.ref)}</code></span>`).join('');
 const LEVEL_LABEL = { root: 'raíz', hub: 'hub', app: 'hoard', module: 'módulo', capability: 'capacidad', tool: 'tool' };
+$('f-commented-label').textContent = label('Solo los que comenté 💬', 'Only discoveries I replied to 💬');
 const state = { suit: null, view: 'overview', page: 0, pageSize: 60, selected: null, names: {}, targets: [], treeSel: null };
 
 async function api(path, opts = {}) {
@@ -177,6 +180,8 @@ async function loadWaSettings() {
     const st = await api('/api/settings');
     if (st.whatsapp_chat && ![...$('wa-chat').options].some((o) => o.value === st.whatsapp_chat)) { const o = document.createElement('option'); o.value = st.whatsapp_chat; o.textContent = st.whatsapp_chat_name || st.whatsapp_chat; $('wa-chat').appendChild(o); }
     $('wa-chat').value = st.whatsapp_chat || '';
+    $('owner-name').value = st.owner_name || '';
+    $('wa-account').value = st.whatsapp_account || '';
   } catch { /* ignore */ }
 }
 $('wa-find').addEventListener('click', async () => {
@@ -188,6 +193,16 @@ $('wa-find').addEventListener('click', async () => {
     if (g) sel.value = g.jid || g.id;
     $('wa-status').textContent = `${r.chats.length} chats en el puente.${g ? ' Gittrend encontrado.' : ''}`;
   } catch (e) { $('wa-status').textContent = /not running|ConnectError|503/.test(e.message) ? 'El puente de WhatsApp de Faustus está parado. Arráncalo en Faustus (Herramientas → WhatsApp) y vincúlalo escaneando el QR con el móvil; después pulsa «Buscar chats».' : `No se pudo leer el puente de WhatsApp: ${e.message}`; }
+});
+$('owner-name-label').textContent = label('Nombre para la autoría', 'Attribution name');
+$('wa-account-label').textContent = label('Cuenta de WhatsApp', 'WhatsApp account');
+$('attribution-save').textContent = label('Guardar', 'Save');
+$('attribution-form').addEventListener('submit', async event => {
+  event.preventDefault();
+  try {
+    await api('/api/settings', { method: 'PUT', body: { owner_name: $('owner-name').value.trim(), whatsapp_account: $('wa-account').value.trim() } });
+    toast(label('Autoría guardada', 'Attribution saved'));
+  } catch (error) { fail(error); }
 });
 $('wa-chat').addEventListener('change', async () => { try { await api('/api/settings', { method: 'PUT', body: { whatsapp_chat: $('wa-chat').value, whatsapp_chat_name: $('wa-chat').selectedOptions[0]?.textContent || '' } }); toast('Chat guardado.'); } catch (e) { fail(e); } });
 $('wa-sync').addEventListener('click', async () => {
@@ -212,7 +227,7 @@ function fillStaticFilters() {
 }
 function saveFilters() { store('darwin.filters', JSON.stringify({ 'f-state': $('f-state').value, 'f-channel': $('f-channel').value, 'f-order': $('f-order').value, 'f-pinned': $('f-pinned').checked, 'f-commented': $('f-commented').checked })); }
 for (const k of PROPOSAL_STATES) { const o = document.createElement('option'); o.value = k; o.textContent = STATE_LABEL[k]; $('p-state').appendChild(o); }
-for (const [k, l] of [['luis', 'Luis'], ['agent', 'Agente'], ['agora', 'Ágora'], ['radar', 'Radar'], ['tracker', 'Seguimiento'], ['guide', 'Guía']]) { const o = document.createElement('option'); o.value = k; o.textContent = l; $('p-origin').appendChild(o); }
+for (const [k, l] of [['owner', label('Persona responsable', 'Owner')], ['agent', 'Agente'], ['agora', 'Ágora'], ['radar', 'Radar'], ['tracker', 'Seguimiento'], ['guide', 'Guía']]) { const o = document.createElement('option'); o.value = k; o.textContent = l; $('p-origin').appendChild(o); }
 
 // saved filters (named, kept by Darwin so agents can use them with darwin_find saved=<name>)
 const FILTER_FIELDS = { query: 'f-q', state: 'f-state', target: 'f-target', channel: 'f-channel', order: 'f-order' };
@@ -271,8 +286,8 @@ async function loadHistory() {
     const tb = $('list').querySelector('tbody');
     tb.innerHTML = r.items.map((i) => `<tr data-id="${i.id}" class="${state.selected === i.id ? 'sel' : ''}">
       <td class="num">${i.radar_no ?? ''}</td>
-      <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div>${i.luis_comment ? `<div class="t-luis" title="${esc(i.luis_comment)}">${esc(i.luis_comment)}</div>` : ''}<div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
-      <td>${i.luis_comments ? `<span class="chip luis" title="${esc(i.luis_comment)}">💬 Luis${i.luis_comments > 1 ? ' ×' + i.luis_comments : ''}</span>` : ''}${chip(i.state)}${proofChip(i.proof)}${i.fitness ? `<span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>` : ''}</td>
+      <td><div class="t-title">${i.pinned ? '📌 ' : ''}${esc(i.title || i.repo || i.url)}</div>${i.own_comment ? `<div class="t-owner" title="${esc(i.own_comment)}">${esc(i.own_comment)}</div>` : ''}<div class="t-sub">${esc(plain(i.summary || i.url || ''))}</div></td>
+      <td>${i.own_comments ? `<span class="chip owner" title="${esc(i.own_comment)}">💬 ${label('Cuenta propia', 'Own account')}${i.own_comments > 1 ? ' ×' + i.own_comments : ''}</span>` : ''}${chip(i.state)}${proofChip(i.proof)}${i.fitness ? `<span class="chip fit" title="${esc((i.fitness_reasons || []).join(' · '))}">${i.fitness}</span>` : ''}</td>
       <td>${i.targets.map(appChip).join('')}</td>
       <td class="num">${i.captures}</td><td class="meta">${when(i.last_seen)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
     tb.querySelectorAll('tr[data-id]').forEach((tr) => tr.addEventListener('click', () => openDetail(+tr.dataset.id)));
@@ -332,7 +347,7 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
     el.querySelectorAll('[data-thread]').forEach((btn) => btn.addEventListener('click', () => discussProposal(+btn.dataset.thread, false)));
     el.querySelectorAll('[data-save]').forEach((b) => b.addEventListener('click', async () => {
       const pid = +b.dataset.save;
-      try { await call('darwin_set_state', { entity: 'proposals', id: pid, field: 'state', value: el.querySelector(`[data-pid="${pid}"]`).value, note: el.querySelector(`[data-note="${pid}"]`).value, by: 'luis' }); toast('Estado cambiado.'); openDetail(id); loadHistory(); }
+      try { await call('darwin_set_state', { entity: 'proposals', id: pid, field: 'state', value: el.querySelector(`[data-pid="${pid}"]`).value, note: el.querySelector(`[data-note="${pid}"]`).value }); toast('Estado cambiado.'); openDetail(id); loadHistory(); }
       catch (e) { fail(e); }
     }));
     $('cov-btn').addEventListener('click', async () => {
@@ -347,7 +362,7 @@ async function openDetail(id, { preserveDrafts = false } = {}) {
       const into = parseInt($('fix-into').value, 10);
       if (!into || into === id) return toast('Escribe el número del hallazgo correcto.', 'err');
       if (!confirm(`¿Marcar este hallazgo como una mala lectura del #${into}? Sus apariciones, propuestas y entregas pasarán a ese.`)) return;
-      try { await call('darwin_source_correct', { source_id: id, into_id: into, by: 'luis' }); toast(`Fusionado en el #${into}.`); state.selected = into; loadHistory(); openDetail(into); loadOverview(); } catch (e) { fail(e); }
+      try { await call('darwin_source_correct', { source_id: id, into_id: into }); toast(`Fusionado en el #${into}.`); state.selected = into; loadHistory(); openDetail(into); loadOverview(); } catch (e) { fail(e); }
     });
     for (const draft of drafts) {
       const field = el.querySelector(draft.selector);
@@ -384,12 +399,13 @@ function ancestry(d) {
 }
 
 // ------------------------------------------------------------------ comments (quoted replies)
+const replySender = (reply) => reply.sender_name || (reply.from_me ? label('Cuenta propia', 'Own account') : label('Otra persona del grupo', 'Other participant'));
 function quoteBlock(r) {
-  return `<blockquote class="quote"><span class="meta">En respuesta a${r.quoted_from ? ' ' + esc(r.quoted_from === 'me' ? 'un mensaje de Luis' : r.quoted_from) : ''}:</span> ${esc((r.quoted_text || '(mensaje sin texto)').slice(0, 300))}</blockquote>`;
+  return `<blockquote class="quote"><span class="meta">En respuesta a${r.quoted_from ? ' ' + esc(r.quoted_from === 'me' ? label('un mensaje propio', 'my message') : r.quoted_from) : ''}:</span> ${esc((r.quoted_text || '(mensaje sin texto)').slice(0, 300))}</blockquote>`;
 }
 function commentCard(c) {
-  return `<div class="item comment${c.from_luis ? ' luis' : ''}"><div class="head"><span class="chip luis">💬 ${esc(c.who)}</span><span class="meta">${whenFull(c.at)}</span></div>
-    <div class="body luis-line">${esc(c.text || '(sin texto)')}</div>${quoteBlock(c)}</div>`;
+  return `<div class="item comment${c.from_me ? ' owner' : ''}"><div class="head"><span class="chip owner">💬 ${esc(replySender(c))}</span><span class="meta">${whenFull(c.at)}</span></div>
+    <div class="body owner-line">${esc(c.text || '(sin texto)')}</div>${quoteBlock(c)}</div>`;
 }
 
 // ------------------------------------------------------------------ inbox
@@ -407,13 +423,13 @@ async function loadInbox() {
         : (img ? '<div class="prov">Pendiente de leer</div>' : '');
       return `<div class="card inbox-card"><div class="head"><span class="chip">${esc(CHANNEL_LABEL[c.channel] || c.channel)}</span><span class="meta">${whenFull(c.at)}${c.author ? ' · ' + esc(c.author) : ''}</span></div>
       ${img ? `<a href="/api/captures/${c.id}/media" target="_blank" rel="noopener"><img class="thumb" loading="lazy" src="/api/captures/${c.id}/media" alt="Captura"></a>` : ''}
-      ${c.reply ? `<p class="luis-line">${esc(c.reply.who)}: ${esc(c.text || '(sin texto)')}</p>${quoteBlock(c.reply)}` : (c.text ? `<p>${esc(c.text)}</p>` : (img ? '' : '<p>(sin texto)</p>'))}${read}
+      ${c.reply ? `<p class="owner-line">${esc(replySender(c.reply))}: ${esc(c.text || '(sin texto)')}</p>${quoteBlock(c.reply)}` : (c.text ? `<p>${esc(c.text)}</p>` : (img ? '' : '<p>(sin texto)</p>'))}${read}
       <div class="inline-form"><input data-cap="${c.id}" placeholder="URL u owner/repo de esta captura"><button class="btn small" data-link="${c.id}">Convertir en descubrimiento</button></div></div>`;
     }).join('') || '<div class="empty">Nada pendiente.</div>';
     $('inbox').querySelectorAll('[data-link]').forEach((b) => b.addEventListener('click', async () => {
       const cap = r.items.find((c) => c.id === +b.dataset.link);
       const ref = $('inbox').querySelector(`[data-cap="${b.dataset.link}"]`).value.trim();
-      try { await call('darwin_add', { text: ref ? `${ref}\n${cap.text || ''}` : (cap.text || ''), channel: 'manual', author: 'luis', note: `Desde la bandeja (${cap.channel})` }); toast('Convertido en descubrimiento.'); loadInbox(); } catch (e) { fail(e); }
+      try { await call('darwin_add', { text: ref ? `${ref}\n${cap.text || ''}` : (cap.text || ''), channel: 'manual', note: `Desde la bandeja (${cap.channel})` }); toast('Convertido en descubrimiento.'); loadInbox(); } catch (e) { fail(e); }
     }));
   } catch (e) { fail(e); }
   ocrStatus();
@@ -573,10 +589,10 @@ async function loadGaps() {
       ${stale.map((g) => `<div class="item"><div class="head"><b>${esc(g.title)}</b><span class="chip st-parcial">posiblemente obsoleta</span>${g.possibly_stale.reason === 'semantic' ? '<span class="chip">por significado</span>' : ''}</div>
         <div class="body">Capacidad: <code>${esc(g.possibly_stale.capability_name)}</code> ${evidenceHtml(g.possibly_stale.evidence)}${g.possibly_stale.matched?.[0] && g.possibly_stale.reason === 'semantic' ? `<div class="meta">${esc(g.possibly_stale.matched[0])}</div>` : ''}</div>
         <div class="actions"><button class="btn small" data-confirm="${g.id}" type="button">Confirmar: ya está resuelta</button><button class="btn small ghost" data-dismiss="${g.id}" type="button">No es lo mismo</button></div></div>`).join('')}</div>` : ''}`;
-    $('gaps-recheck')?.addEventListener('click', async () => { try { const x = await call('darwin_gaps_reconcile', { by: 'luis' }); toast(`${x.stale_count} posiblemente obsoletas, ${x.open} abiertas.`); loadGaps(); } catch (e) { fail(e); } });
+    $('gaps-recheck')?.addEventListener('click', async () => { try { const x = await call('darwin_gaps_reconcile', {}); toast(`${x.stale_count} posiblemente obsoletas, ${x.open} abiertas.`); loadGaps(); } catch (e) { fail(e); } });
     $('gaps-semantic')?.addEventListener('click', async (ev) => {
       const b = ev.currentTarget; b.disabled = true; b.textContent = 'Preguntando al modelo…';
-      try { const x = await call('darwin_gaps_reconcile', { by: 'luis', semantic: true, limit: 40 }); const s = x.semantic || {};
+      try { const x = await call('darwin_gaps_reconcile', { semantic: true, limit: 40 }); const s = x.semantic || {};
         toast(`Por significado: ${s.asked} consultadas, ${s.flagged} marcadas como posiblemente obsoletas${s.model_failed ? `, ${s.model_failed} sin respuesta del modelo` : ''}.`); loadGaps(); }
       catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Conciliar por significado'; }
     });
@@ -586,8 +602,8 @@ async function loadGaps() {
         toast(`Objetivos: ${x.added} carencias nuevas (${x.log_added} de los diarios), ${x.closed} cerradas${x.log_pending ? `, ${x.log_pending} por clasificar en la próxima pasada` : ''}.`); loadGaps(); }
       catch (e) { fail(e); } finally { b.disabled = false; b.textContent = 'Importar de los objetivos'; }
     });
-    document.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { confirm_ids: [+b.dataset.confirm], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
-    document.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { dismiss_ids: [+b.dataset.dismiss], by: 'luis' }); loadGaps(); } catch (e) { fail(e); } }));
+    document.querySelectorAll('[data-confirm]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { confirm_ids: [+b.dataset.confirm] }); loadGaps(); } catch (e) { fail(e); } }));
+    document.querySelectorAll('[data-dismiss]').forEach((b) => b.addEventListener('click', async () => { try { await call('darwin_gaps_reconcile', { dismiss_ids: [+b.dataset.dismiss] }); loadGaps(); } catch (e) { fail(e); } }));
     $('gaps-badge').hidden = !stale.length; $('gaps-badge').textContent = stale.length;
     $('gaps').innerHTML = r.gaps.filter((g) => !(g.possibly_stale && g.state === 'abierta')).map((g) => `<div class="card"><div class="card-head"><h3 style="text-transform:none;font-size:15px;color:var(--hoard-text)">${esc(g.title)}</h3>${chip(g.state === 'abierta' ? 'pendiente' : 'integrada', g.state)}</div>
       ${g.detail ? `<p>${esc(g.detail)}</p>` : ''}<div class="meta">${g.target ? 'Para ' + esc(appName(g.target)) + ' · ' : ''}${whenFull(g.created)}${g.watch?.condition ? ' · Se podrá cuando: ' + esc(g.watch.condition) : ''}${gapOrigin(g)}</div></div>`).join('') || '<div class="empty">No hay carencias apuntadas. Apunta aquí lo que quieres poder hacer y ninguna app hace: el radar buscará contra esto.</div>'
@@ -649,7 +665,7 @@ $('add-save').addEventListener('click', async (ev) => {
   ev.preventDefault();
   const text = $('add-full').value.trim(); if (!text) return;
   try {
-    const r = await call('darwin_add', { text, target: $('add-target').value, note: $('add-note').value, channel: 'manual', author: 'luis' });
+    const r = await call('darwin_add', { text, target: $('add-target').value, note: $('add-note').value, channel: 'manual' });
     $('add-result').innerHTML = r.sources.map((s) => `<div class="item"><div class="head">${s.existing ? '<span class="chip st-cubierta">Ya estaba</span>' : '<span class="chip st-aceptada">Nuevo</span>'}${s.candidate ? '<span class="chip">sin verificar</span>' : ''}${chip(s.state)}
       <a href="#" data-open="${s.source.id}">${esc(s.source.title || s.source.repo)}</a></div>${s.existing && s.proposals?.length ? `<div class="body">${s.proposals.map((p) => `${esc(appName(p.target || '?'))}: ${esc(STATE_LABEL[p.state] || p.state)}`).join(' · ')}</div>` : ''}</div>`).join('');
     $('add-result').querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); $('add-dialog').close(); show('history'); openDetail(+a.dataset.open); }));
@@ -790,7 +806,7 @@ $('posts-read').addEventListener('click', async () => { try { await api('/api/po
 
 // ------------------------------------------------------------------ proposals
 
-const ORIGIN_LABEL = { luis: 'Luis', agent: 'Agente', agora: 'Ágora', radar: 'Radar', 'radar-ideas': 'Radar (proyecto)', tracker: 'Seguimiento', guide: 'Guía', mention: 'Mención' };
+const ORIGIN_LABEL = { owner: label('Persona responsable', 'Owner'), agent: 'Agente', agora: 'Ágora', radar: 'Radar', 'radar-ideas': 'Radar (proyecto)', tracker: 'Seguimiento', guide: 'Guía', mention: 'Mención' };
 state.pPage = 0;
 let pTimer = 0;
 $('p-q').addEventListener('input', () => { clearTimeout(pTimer); pTimer = setTimeout(() => { state.pPage = 0; loadProposals(); }, 250); });
@@ -813,12 +829,12 @@ async function loadProposals() {
       <td><div class="t-title">${esc(p.title || p.repo || ('#' + p.source_id))}</div><div class="t-sub">${p.radar_no ? 'radar #' + p.radar_no + ' · ' : ''}${esc(p.url || '')}</div></td>
       <td>${p.target ? appChip(p.target) : '<span class="chip">sin app</span>'}</td>
       <td><select data-pstate="${p.id}" aria-label="Estado">${PROPOSAL_STATES.map((k) => `<option value="${k}" ${k === p.state ? 'selected' : ''}>${STATE_LABEL[k]}</option>`).join('')}</select></td>
-      <td class="meta">${esc(ORIGIN_LABEL[(p.origin || '').split(':')[0]] || p.origin || '')}${p.agora_task ? ` · Ágora #${p.agora_task}` : ''}</td>
+      <td class="meta">${esc(p.origin_actor || ORIGIN_LABEL[p.origin_role || (p.origin || '').split(':')[0]] || p.origin || '')}${p.agora_task ? ` · Ágora #${p.agora_task}` : ''}</td>
       <td class="meta">${esc((p.reason || '').slice(0, 160))}</td><td class="meta">${when(p.updated)}</td></tr>`).join('') || '<tr><td colspan="6" class="empty">Nada con esos filtros.</td></tr>';
     tb.querySelectorAll('[data-pstate]').forEach((sel) => {
       sel.addEventListener('click', (e) => e.stopPropagation());
       sel.addEventListener('change', async () => {
-        try { await call('darwin_set_state', { entity: 'proposals', id: +sel.dataset.pstate, field: 'state', value: sel.value, note: 'Desde la lista de propuestas', by: 'luis' }); toast('Estado cambiado.'); loadProposals(); }
+        try { await call('darwin_set_state', { entity: 'proposals', id: +sel.dataset.pstate, field: 'state', value: sel.value, note: 'Desde la lista de propuestas' }); toast('Estado cambiado.'); loadProposals(); }
         catch (e) { fail(e); }
       });
     });

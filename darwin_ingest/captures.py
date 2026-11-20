@@ -72,7 +72,7 @@ def sync_whatsapp_page(store, client, *, account, chat, limit=200):
             'text': message.get('text') or '', 'at': message.get('ts'), 'chat': chat,
             'author': message.get('from') or ('me' if message.get('from_me') else ''),
             'attachment': json.dumps(message.get('media') or message.get('attachment') or '', ensure_ascii=False),
-            'provenance': {'account': account, 'chat': chat, 'message_id': message['id'], 'revision': _digest(content), 'from_me': bool(message.get('from_me'))},
+            'provenance': {'account': account, 'chat': chat, 'message_id': message['id'], 'revision': _digest(content), 'from_me': bool(message.get('from_me')), 'from_name': str(message.get('from_name') or '')[:80]},
             'declared': {'edited': bool(message.get('edited')), 'deleted': bool(message.get('deleted')), 'coverage': page.get('coverage')},
             'reply_to': message.get('reply_to') if isinstance(message.get('reply_to'), dict) else None,
         })

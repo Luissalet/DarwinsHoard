@@ -1,4 +1,4 @@
-"""darwin_triage: picks only real app ids, never overrides Luis, triages each discovery once."""
+"""darwin_triage: picks only real app ids, preserves the owner's decisions, triages each discovery once."""
 from darwin_hoard import triage
 from darwin_hoard.store import Store
 
@@ -18,7 +18,7 @@ def test_triage_proposes_known_apps_and_marks_the_rest(tmp_path):
     b = store.upsert_source(url="https://x.com/someone", title="profile")
     c = store.upsert_source(repo="x/thing", title="thing")
     owned = store.upsert_source(repo="x/owned", title="owned")
-    store.upsert_proposal(key="k", source_id=owned, target="writer", state="descartada", origin="luis")
+    store.upsert_proposal(key="k", source_id=owned, target="writer", state="descartada", origin="owner")
     answers = {"meeting transcription": {"app": "talos", "reason": "Actas.", "useful": True},
                "profile": {"app": None, "reason": "Perfil sin contenido.", "useful": False},
                "thing": {"app": "made-up", "reason": "?", "useful": True}}

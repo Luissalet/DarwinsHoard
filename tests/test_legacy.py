@@ -137,7 +137,7 @@ def test_aggregate_mixed_and_proof(tmp_path):
     verify_deliveries(store, {"R": str(repo)})
     g = query.genealogy(store, source_id=sid)
     assert g["proof"] == "en_main"
-    store.upsert_proposal(key="a->y", source_id=sid, target="y", state="descartada", origin="luis")
+    store.upsert_proposal(key="a->y", source_id=sid, target="y", state="descartada", origin="owner")
     assert query.genealogy(store, source_id=sid)["state"] == "integrada"
     store.close()
 

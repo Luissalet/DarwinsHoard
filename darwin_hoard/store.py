@@ -135,6 +135,9 @@ class Store:
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA foreign_keys=ON")
         self._conn.executescript(SCHEMA)
+        self.owner_label = ""
+        self.whatsapp_account = ""
+        self.legacy_owner_ids: set[str] = set()
 
     def close(self) -> None:
         with self._lock:
@@ -158,6 +161,27 @@ class Store:
     def one(self, sql: str, args: Iterable[Any] = ()) -> Optional[dict[str, Any]]:
         with self._lock:
             return _row(self._conn.execute(sql, tuple(args)).fetchone())
+
+    def configure_attribution(self, owner_label: str, legacy_ids: list[str], account: str = "") -> None:
+        self.owner_label = owner_label
+        self.whatsapp_account = account
+        previous = self.q("SELECT DISTINCT author FROM captures WHERE channel='manual' AND "
+                          "json_extract(provenance,'$.via')='darwin_add' AND "
+                          "json_extract(provenance,'$.actor_role') IS NULL")
+        self.legacy_owner_ids = {actor for actor in [*legacy_ids, *(row["author"] for row in previous)]
+                                if actor and actor not in _ORIGIN_RANK and actor != "manual"}
+
+    def origin_role(self, origin: str) -> str:
+        prefix = (origin or "").split(":", 1)[0]
+        return "owner" if prefix in self.legacy_owner_ids else prefix
+
+    def _proposal_rank(self, connection: sqlite3.Connection, row: sqlite3.Row) -> int:
+        origin_rank = _ORIGIN_RANK.get(self.origin_role(row["origin"]), 1)
+        decision = connection.execute("SELECT by FROM history WHERE entity='proposals' AND entity_id=? AND field='state' "
+                                      "ORDER BY at DESC, id DESC LIMIT 1", (row["id"],)).fetchone()
+        if decision and decision["by"] in self.legacy_owner_ids:
+            return max(origin_rank, _ORIGIN_RANK["owner"])
+        return origin_rank
 
     # ------------------------------------------------------------------ sources
 
@@ -379,9 +403,8 @@ class Store:
             if updates:
                 updates["updated"] = now
                 c.execute(f"UPDATE proposals SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?", (*updates.values(), pid))
-        if row["state"] != state and _rank(origin) >= _rank(row["origin"] or ""):
-            self.set_state("proposals", pid, "state", state, by=by, note=origin)
-            with self.tx() as c:
+            if row["state"] != state and _ORIGIN_RANK.get(self.origin_role(origin), 1) >= self._proposal_rank(c, row):
+                self._write_state(c, "proposals", pid, "state", row["state"], state, by, origin)
                 c.execute("UPDATE proposals SET origin=? WHERE id=?", (origin, pid))
         return pid
 
@@ -410,26 +433,35 @@ class Store:
                 c.execute(f"UPDATE deliveries SET {', '.join(f'{k}=?' for k in updates)} WHERE id=?", (*updates.values(), did))
         return did
 
-    def set_state(self, entity: str, entity_id: int, field: str, value: str, *, by: str = "", note: str = "") -> bool:
+    def set_state(self, entity: str, entity_id: int, field: str, value: str, *, by: str = "", note: str = "",
+                  proposal_origin: Optional[str] = None) -> bool:
         """Change one state field, writing the old value to ``history``. Returns False when nothing changed."""
         allowed = _STATE_FIELDS.get((entity, field))
         if allowed is None:
             raise ValueError(f"{entity}.{field} is not a state field")
         if value not in allowed:
             raise ValueError(f"{entity}.{field} must be one of: {', '.join(allowed)}")
-        now = time.time()
         with self.tx() as c:
-            row = c.execute(f"SELECT {field} FROM {entity} WHERE id=?", (entity_id,)).fetchone()
+            row = c.execute(f"SELECT * FROM {entity} WHERE id=?", (entity_id,)).fetchone()
             if row is None:
                 raise KeyError(f"{entity} {entity_id} does not exist")
-            old = row[0]
+            old = row[field]
             if old == value:
                 return False
-            c.execute(f"UPDATE {entity} SET {field}=?, updated=? WHERE id=?" if entity != "capabilities"
-                      else f"UPDATE {entity} SET {field}=?, seen=? WHERE id=?", (value, now, entity_id))
-            c.execute("INSERT INTO history(entity, entity_id, field, old, new, at, by, note) VALUES (?,?,?,?,?,?,?,?)",
-                      (entity, entity_id, field, old, value, now, by, note))
+            if entity == "proposals" and proposal_origin is not None:
+                if _ORIGIN_RANK[self.origin_role(proposal_origin)] < self._proposal_rank(c, row):
+                    return False
+                c.execute("UPDATE proposals SET origin=? WHERE id=?", (proposal_origin, entity_id))
+            self._write_state(c, entity, entity_id, field, old, value, by, note)
         return True
+
+    @staticmethod
+    def _write_state(c, entity, entity_id, field, old, value, by, note):
+        now = time.time()
+        updated = "seen" if entity == "capabilities" else "updated"
+        c.execute(f"UPDATE {entity} SET {field}=?, {updated}=? WHERE id=?", (value, now, entity_id))
+        c.execute("INSERT INTO history(entity, entity_id, field, old, new, at, by, note) VALUES (?,?,?,?,?,?,?,?)",
+                  (entity, entity_id, field, old, value, now, by, note))
 
     # ------------------------------------------------------------------ gaps, imports, meta
 
@@ -464,8 +496,4 @@ class Store:
 
 
 #: Who may override a proposal state set by whom: a person or the Ágora outranks a document; a document outranks a guess.
-_ORIGIN_RANK = {"": 0, "mention": 1, "guide": 2, "radar": 2, "radar-ideas": 2, "tracker": 3, "agora": 4, "agent": 4, "luis": 5}
-
-
-def _rank(origin: str) -> int:
-    return _ORIGIN_RANK.get((origin or "").split(":", 1)[0], 1)
+_ORIGIN_RANK = {"": 0, "mention": 1, "guide": 2, "radar": 2, "radar-ideas": 2, "tracker": 3, "agora": 4, "agent": 4, "owner": 5}

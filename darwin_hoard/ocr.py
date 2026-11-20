@@ -1,6 +1,6 @@
 """Screenshots in the inbox: read them with the family's OCR and link the repositories and links they show.
 
-Most of what Luis sends to the Gittrend chat is a screenshot of a post, not a link. A capture with an image attachment and no
+Most of what the account holder sends to the Gittrend chat is a screenshot of a post, not a link. A capture with an image attachment and no
 source goes through the OCR engine of the family (Kafka's, via ``hoard_link.fam_docs.ocr_image``); URLs found in the text are
 taken as they are, bare ``owner/name`` mentions only once GitHub confirms the repository exists (OCR of a post is full of
 ``and/or``-shaped noise). When Kafka's engine gives the layout (Indra: the blocks of the page in reading order), each block (a post,

@@ -33,6 +33,39 @@ def test_health_and_add_then_existing(client):
     assert lst["total"] == 1
 
 
+
+def test_owner_attribution_preserves_old_decisions_and_distinguishes_agent(client):
+    svc = client.app.state.services
+    store = svc.store
+    source_id = store.upsert_source(url="https://example.test/legacy")
+    proposal_id = store.upsert_proposal(key="legacy", source_id=source_id, target="links", origin="agent")
+    store.set_state("proposals", proposal_id, "state", "aceptada", by="previous-profile", note="Stored decision")
+    store.add_capture(capture_key="legacy-capture", channel="manual", text="Previous capture", author="previous-profile",
+                      provenance={"via": "darwin_add"}, source_id=source_id)
+    client.put("/api/settings", json={"owner_name": "Review profile", "whatsapp_account": "separate-chat-account"}).raise_for_status()
+
+    args = {"entity": "proposals", "id": proposal_id, "field": "state", "value": "descartada", "by": "Review profile"}
+    headers = {"Authorization": f"Bearer {svc.token}"}
+    def set_state(route, arguments, **kwargs):
+        return client.post(route, json={"name": "darwin_set_state", "arguments": arguments}, **kwargs).raise_for_status().json()
+
+    assert set_state("/api/agent/call", args, headers=headers)["changed"] is False
+    updated = set_state("/api/ui/call", args)
+    assert updated["changed"]
+    assert [row["by"] for row in updated["history"]] == ["previous-profile", "Review profile"]
+    assert updated["history"][0]["note"] == "Stored decision"
+    [owned] = client.get("/api/proposals", params={"origin": "owner"}).json()["items"]
+    assert owned["origin_actor"] == "Review profile"
+
+    added = client.post("/api/agent/call", headers=headers, json={
+        "name": "darwin_add", "arguments": {"text": "https://example.test/agent", "target": "links",
+                                            "channel": "manual", "author": "Review profile"}
+    }).raise_for_status().json()
+    capture = store.one("SELECT author, provenance FROM captures WHERE id=?", (added["capture_id"],))
+    assert capture["author"] == "agent"
+    assert capture["provenance"]["actor_role"] == "agent"
+
+
 def test_tree_from_manifests_when_hub_down(client):
     rep = client.post("/api/tree/refresh").json()
     assert rep["hub"]["ok"] is False and rep["manifests"]["manifests"] == 1
