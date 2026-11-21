@@ -29,6 +29,10 @@
     "repository-alias-map"
   ],
   "x-family": {
+    "isolated_instance": {
+      "data_env": "DARWIN_DATA_DIR",
+      "port_env": "DARWIN_PORT"
+    },
     "copilot": true
   },
   "placeholders": [
