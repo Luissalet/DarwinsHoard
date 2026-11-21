@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.error import URLError
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,15 +12,26 @@ from darwin_hoard.main import create_app
 @pytest.fixture
 def client(tmp_path):
     cfg = Config(data_dir=tmp_path / "data", port=5233, data_dir_configured=True, hub_url="http://127.0.0.1:9", hoards_root=tmp_path / "hoards")
-    (tmp_path / "hoards" / "Faustusables" / "Ana's Hoard").mkdir(parents=True)
-    (tmp_path / "hoards" / "Faustusables" / "Ana's Hoard" / "faustus-plugin.json").write_text(
-        '{"id": "ana", "name": "Ana\'s Hoard", "purpose": "Reads screenshots with OCR.", "capabilities": ["ocr", "screen-history"]}',
+    manifest_dir = cfg.hoards_root / "Faustusables" / "Screenshot Reader"
+    manifest_dir.mkdir(parents=True)
+    (manifest_dir / "faustus-plugin.json").write_text(
+        '{"id": "screenshot-reader", "name": "Screenshot Reader", "purpose": "Reads screenshots with OCR.", '
+        '"capabilities": ["ocr", "screen-history"]}',
         encoding="utf-8")
-    (tmp_path / "hoards" / "Faustusnt" / "Dex").mkdir(parents=True)
+    (cfg.hoards_root / "Faustusnt" / "Standalone Utility").mkdir(parents=True)
     app = create_app(cfg, background=False)
     with TestClient(app, base_url="http://127.0.0.1:5233", client=("127.0.0.1", 50000)) as c:
         c.app.state.services.settings["faustus_url"] = "http://127.0.0.1:9"
         yield c
+
+
+@pytest.fixture
+def offline_tree_sources(monkeypatch):
+    def unavailable(*_args, **_kwargs):
+        raise URLError("tree source is offline")
+
+    # Covers placement discovery as well as both sources of tree data.
+    monkeypatch.setattr("urllib.request.urlopen", unavailable)
 
 
 def test_health_and_add_then_existing(client):
@@ -111,15 +124,20 @@ def test_legacy_reply_filter_and_origin_work_without_saved_settings(tmp_path):
         assert replay["history"][0]["note"] == "Historical choice"
 
 
+@pytest.mark.usefixtures("offline_tree_sources")
 def test_tree_from_manifests_when_hub_down(client):
     rep = client.post("/api/tree/refresh").json()
-    assert rep["hub"]["ok"] is False and rep["manifests"]["manifests"] == 1
+    assert rep["hub"]["ok"] is False
+    assert rep["faustus"]["ok"] is False
+    assert rep["manifests"] == {"ok": True, "manifests": 1}
     t = client.get("/api/tree", params={"root": "hoardhub", "depth": 2}).json()["tree"]
     names = {c["name"] for c in t["children"]}
-    assert {"Ana's Hoard", "Dex"} <= names
+    assert {"Screenshot Reader", "Standalone Utility"} <= names
     found = client.get("/api/capabilities/find", params={"q": "dónde hacemos ocr"}).json()
-    assert found["apps"][0]["app_id"] == "ana"
-    assert found["apps"][0]["path"][:2] == ["Faustus", "Hoard Hub"]
+    [app] = found["apps"]
+    assert app["app_id"] == "screenshot-reader"
+    assert any(match["name"] == "ocr" and match["evidence"] == "declarada" for match in app["matches"])
+    assert app["path"][:2] == ["Faustus", "Hoard Hub"]
 
 
 def test_set_state_requires_evidence_for_integrated(client):
@@ -147,6 +165,7 @@ def test_agent_bridge_requires_token(client):
     assert ok.status_code == 200
 
 
+@pytest.mark.usefixtures("offline_tree_sources")
 def test_capability_find_ignores_stopwords(client):
     client.post("/api/tree/refresh")
     found = client.get("/api/capabilities/find", params={"q": "¿quién hace OCR?"}).json()

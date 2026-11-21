@@ -49,6 +49,9 @@ The attribution fields in the WhatsApp panel configure the owner’s display nam
 
 ## Rules
 
+- When the Hub is unreachable, `darwin_tree_refresh` reads local manifests. The live tool catalogue is queried
+  independently. `darwin_capability_find` can return both declared manifest capabilities and live tool matches.
+
 - Never fold states: proposal, implementation, verification and operation are separate axes.
 - A declared delivery is not proof; `evidence.commit_ancestry = integrated` is code proof, not a functional test. With `via` other than `direct` the proof is an equivalent commit (`equivalent_of` = the declared one) or what the Ágora task says reached main; `imported` means the declared commit cannot be checked locally.
 - Un nombre de capacidad en el árbol no prueba que funcione: un traje solo está «backed» si cada operación necesaria existe y tiene prueba registrada.
